@@ -7,7 +7,7 @@
 
 | Layer | Choice | Why |
 |---|---|---|
-| **Backend** | **Python 3.13 + FastAPI**, SQLAlchemy 2 + Alembic, Pydantic v2, httpx | The whole team already works in Python (PyCharm). FastAPI generates the OpenAPI 3.1 document we must publish. Async `httpx` calls the 5 sources in parallel with timeouts and retries (≤ 15 s per run). |
+| **Backend** | **Python 3.13 + FastAPI**, SQLAlchemy 2 + Alembic, Pydantic v2, httpx | The whole team already works in Python (PyCharm). FastAPI generates the OpenAPI 3.1 document we must publish. Async `httpx` calls the 5 sources in parallel: 8 s timeout and max. 2 retries per call, 30 s hard limit per run; target is a full run in ≤ 15 s (95 % of runs). |
 | **Background jobs** | **Celery + Redis**, Celery Beat | A check run is started via `POST /api/v1/checks` → `202` and runs in a worker. Celery Beat runs the BMF update every 30 min, the daily list import and the retention job. |
 | **Frontend** | **React + TypeScript** (Vite), react-i18next, oidc-client-ts | Single-page app that uses the same `/api/v1` as the ERP, so web and API always give the same result. German/English texts in language files. Biggest ecosystem and lots of learning material. |
 | **Database** | **PostgreSQL 17** | Relational data with real constraints (organizations, users, runs, results), JSONB for the raw source answers, transactions so a run is stored completely or marked incomplete, triggers that block changes to stored runs, fast filters for the history. |
