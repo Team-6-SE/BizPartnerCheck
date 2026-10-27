@@ -1,0 +1,18 @@
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-bizpartner}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bizpartner}
+      POSTGRES_DB: ${POSTGRES_DB:-bizpartner}
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bizpartner}"]
+      interval: 5s
+      retries: 10
+
+volumes:
+  db_data:
