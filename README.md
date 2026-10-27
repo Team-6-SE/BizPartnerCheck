@@ -2,63 +2,187 @@
 
 Due diligence checks for construction companies.
 
-## Tech stack and architecture
+---
 
-> Backlog item **E01-01 – Choose tech stack and architecture**. Status: **proposed**, accepted when this PR is merged.
-> Diagrams and details: [docs/architecture.md](docs/architecture.md). IDs such as CON-… and OI-… refer to the SRS v0.1.
+## How we work
 
-### Decision
+### Branches
+- `main` always contains working, reviewed code. **Never push to it directly** (it is protected).
+- Create **one branch per Jira item**: `SCRUM-<number>-short-description` (e.g. `SCRUM-31-vies-check`).
+- Keep branches small and short-lived. Split big items into smaller ones.
+- Ihor deletes the branch after it is merged.
 
-| Layer | Choice | Why |
-|---|---|---|
-| **Backend** | **Python 3.13 + FastAPI**, SQLAlchemy 2 + Alembic, Pydantic v2, httpx | The whole team already works in Python (PyCharm). FastAPI generates the OpenAPI 3.1 document we must publish. Async `httpx` calls the 5 sources in parallel with timeouts and retries (≤ 15 s per run). |
-| **Background jobs** | **Celery + Redis**, Celery Beat | A check run is started via `POST /api/v1/checks` → `202` and runs in a worker. Celery Beat runs the BMF update every 30 min, the daily list import and the retention job. |
-| **Frontend** | **React + TypeScript** (Vite), react-i18next, oidc-client-ts | Single-page app that uses the same `/api/v1` as the ERP, so web and API always give the same result. German/English texts in language files. Biggest ecosystem and lots of learning material. |
-| **Database** | **PostgreSQL 17** | Relational data with real constraints (organizations, users, runs, results), JSONB for the raw source answers, transactions so a run is stored completely or marked incomplete, triggers that block changes to stored runs, fast filters for the history. |
-| **Identity** | **Keycloak** (self-hosted, open source) | We must not build authentication ourselves (CON-07). Gives OIDC sign-in, password policy and lockout, reset and invitation e-mails, and OAuth 2.0 client credentials for API tokens. Runs in Docker, no cloud dependency. *To confirm with the customer (OI-10).* |
-| **PDF reports** | **WeasyPrint** (HTML/CSS templates → PDF) | Same Jinja2 templates in German and English. |
-| **Deployment** | **Docker Compose** on one Linux VM, **Caddy** as reverse proxy | Install with one command, no proprietary cloud. Caddy handles TLS automatically. |
-| **CI / quality** | **GitHub Actions**: ruff, pytest + coverage, ESLint + Vitest, Docker build, dependency audit | Every PR is built and tested, ≥ 70 % coverage for rules and adapters, library check. |
+### Commits
+- Format: `SCRUM-<number>: what you did` (e.g. `SCRUM-31: add VIES client`).
+- Commit small and often, whenever you reach a small working step.
 
-Tooling: `uv` for Python dependencies, `ruff` for lint + format, `npm` for the frontend, Mailpit as a fake mail server in development.
+### Pull requests
+- Every change goes into `main` through a pull request.
+- Fill in the PR template (Jira item, what changed, how to test, checklist).
+- Ihor approves before merging.
+- Review comments must be resolved before merging.
+- Ihor merges after approval.
+- Keep PRs small: **one Jira item per PR**, reviewable in about 15 minutes.
 
-### Architecture in one picture
+### Staying up to date
+- Pull the latest `main` into your branch **at least once a day**.
 
-A **modular monolith**: one backend code base that runs as an API process and a worker process,
-plus the frontend, PostgreSQL, Redis and Keycloak, all in one `docker-compose.yml`.
+---
 
-```mermaid
-flowchart LR
-    user["Browser<br/>(Checker, admins)"] --> proxy["Caddy<br/>TLS"]
-    erp["ERP<br/>(API client)"] --> proxy
-    proxy --> fe["React SPA"]
-    proxy --> api["FastAPI<br/>/api/v1"]
-    proxy --> kc["Keycloak"]
-    api --> kc
-    api --> db[("PostgreSQL")]
-    api --> redis[("Redis")]
-    redis --> worker["Celery worker<br/>+ Beat scheduler"]
-    worker --> db
-    worker --> ext["VIES · BMF · ÖGK HFU<br/>Firmenbuch · GISA"]
-    worker --> mail["SMTP"]
+## Why we use branches
+
+A branch is a separate line of work inside the project. It lets you change code without touching the version everyone else relies on.
+
+```
+main  ──●──────────●──────────────●────►   (always working code)
+         \        /  \            /
+          ●──●──●     ●──●──●──●
+       SCRUM-23 branch   SCRUM-31 branch
+       (merged via PR)   (merged via PR)
 ```
 
-Main rules (details in [docs/architecture.md](docs/architecture.md)):
+This keeps half-finished or broken code away from the rest of the team, makes changes easy to review, and lets us throw away experiments without affecting anyone.
 
-1. **One adapter per data source** behind a common interface; the check rules never contain source-specific code.
-2. **The rule engine is pure Python** (no HTTP, no database), so it is easy to unit-test.
-3. **A source that does not answer gives `ERROR`, never `PASSED`**.
-4. **Every query is filtered by organization** taken from the token.
-5. **Stored runs are append-only** and get a SHA-256 hash.
-6. **No secrets in the code**: everything comes from environment variables / `.env`.
+---
 
-### Why not …
+## Workflow: from start to finish
 
-| Alternative | Why we did not pick it |
-|---|---|
-| Microservices | Too much overhead for our size; ~20 checks/minute at peak (ASM-05) fit easily in one service. |
-| Django + DRF | Great admin and auth, but we must use an external identity solution anyway; FastAPI's async calls and automatic OpenAPI fit our source checks better. |
-| Server-rendered pages (Jinja2 + HTMX) | Less JavaScript, but the web app would need a second auth path (sessions) next to the API tokens and could drift from the API. |
-| Java / Spring Boot, .NET | Solid, but the team works in Python. |
-| MySQL / MongoDB | PostgreSQL is better for JSONB + strict constraints + triggers; MongoDB has no relational integrity for evidence data. |
-| Auth0 / other hosted identity | Free tiers are limited and add a cloud dependency. Ory is a lighter option if Keycloak turns out too heavy. |
+Example task: **SCRUM-31 – Add VAT number check via the VIES service.**
+
+### 1. Start from an up-to-date `main`
+
+**PyCharm:** Click the branch name (top-left in the new UI, bottom-right in the classic UI) → `main` → **Checkout**. Then **Git → Pull** (Ctrl+T / ⌘T).
+
+```bash
+git switch main
+git pull
+```
+
+### 2. Create your branch
+
+**PyCharm:** Branch popup → **New Branch…** → enter `SCRUM-31-vies-check` → keep **Checkout branch** ticked → **Create**.
+
+```bash
+git switch -c SCRUM-31-vies-check
+```
+
+### 3. Write code and commit in small steps
+
+**PyCharm:** Open the Commit tool window (Ctrl+K / ⌘K), tick the changed files, write a message, click **Commit**.
+
+Example commits:
+- `SCRUM-31: add VIES client`
+- `SCRUM-31: add /vat-check endpoint`
+- `SCRUM-31: add tests for VAT check`
+
+```bash
+git add .
+git commit -m "SCRUM-31: add VIES client"
+```
+
+### 4. Push your branch
+
+**PyCharm:** **Git → Push** (Ctrl+Shift+K / ⌘⇧K). The first push creates the branch on GitHub.
+
+```bash
+git push -u origin SCRUM-31-vies-check   # later pushes: git push
+```
+
+### 5. Keep up with `main` (at least daily)
+
+**PyCharm:** Branch popup → hover over `main` → **Merge 'main' into 'SCRUM-31-vies-check'**. If there are conflicts, PyCharm opens a merge tool where you choose which lines to keep.
+
+```bash
+git switch main
+git pull
+git switch SCRUM-31-vies-check
+git merge main
+```
+
+### 6. Open a pull request
+
+On GitHub, click **"Compare & pull request"** for your branch, fill in the template, and request a review from a teammate.
+
+### 7. Address review feedback
+
+Keep working on the same branch, commit, and push. The pull request updates automatically.
+
+### 8. Merge(only applies to Ihor)
+
+Once approved and all comments are resolved, click **Merge** and then **Delete branch** on GitHub.
+
+### 9. Clean up and start the next item
+
+**PyCharm:** Checkout `main` → **Git → Pull** → branch popup → hover your old branch → **Delete**.
+
+```bash
+git switch main
+git pull
+git branch -d SCRUM-31-vies-check
+```
+
+Then go back to step 1 for the next Jira item.
+
+---
+
+## Merge conflicts
+
+A conflict happens when two branches changed the same lines. On GitHub, a PR then shows *"This branch has conflicts"*:
+
+1. Click **Resolve conflicts**.
+2. Decide which lines to keep (sometimes both).
+3. Delete the `<<<<<<<`, `=======` and `>>>>>>>` marker lines.
+4. Click **Mark as resolved → Commit merge**.
+
+In PyCharm, conflicts open in a three-panel merge tool where you accept changes from either side.
+
+---
+
+## Undoing, deleting and renaming branches
+
+You **cannot delete the branch you are currently on**, so switch to `main` first.
+
+### Delete a local branch
+
+**PyCharm:** Branch popup → hover over the branch → **Delete**.
+If it has unmerged commits, PyCharm warns you; deleting loses that work. A **Restore** link briefly appears afterwards.
+
+```bash
+git branch -d SCRUM-31-vies-check   # -D to force if it has unmerged work
+```
+
+### Delete a branch you already pushed
+
+Make sure no teammate is still using it.
+
+**PyCharm:** Branch popup → under **Remote**, hover over `origin/<branch>` → **Delete**.
+
+```bash
+git push origin --delete SCRUM-31-vies-check
+```
+
+### Rename a branch
+
+**PyCharm:** Branch popup → hover over the branch → **Rename…**
+
+```bash
+git branch -m old-name new-name
+```
+
+---
+
+## Quick reference
+
+| Action | PyCharm | Terminal |
+|--------|---------|----------|
+| Pull latest | Git → Pull (Ctrl+T / ⌘T) | `git pull` |
+| New branch | Branch popup → New Branch… | `git switch -c <name>` |
+| Switch branch | Branch popup → branch → Checkout | `git switch <name>` |
+| Commit | Ctrl+K / ⌘K | `git commit -m "SCRUM-<n>: ..."` |
+| Push | Ctrl+Shift+K / ⌘⇧K | `git push` |
+| Merge `main` into branch | Branch popup → main → Merge into current | `git merge main` |
+| Delete local branch | Branch popup → branch → Delete | `git branch -d <name>` |
+| Delete remote branch | Branch popup → Remote → Delete | `git push origin --delete <name>` |
+| Open terminal in PyCharm | Alt+F12 | – |
+
+---
