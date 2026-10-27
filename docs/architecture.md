@@ -1,7 +1,7 @@
 # BizPartnerCheck – Architecture
 
 Backlog item **E01-01 – Choose tech stack and architecture**.
-The reasons for each technology are in [TECHSTACK.md](TECHSTACK.md).
+The reasons for each technology are in [techstack.md](techstack.md).
 IDs such as CON-… and OI-… refer to the SRS v0.1.
 
 ## 1. Style: modular monolith

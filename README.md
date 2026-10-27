@@ -24,6 +24,14 @@ Due diligence checks for construction companies.
 - Ihor merges after approval.
 - Keep PRs small: **one Jira item per PR**, reviewable in about 15 minutes.
 
+## Documentation
+- There is **one README** for the whole project. Do not replace it – only add or update the lines your change affects (e.g. a new setup step or `.env` variable).
+- If your task includes a decision or something the team needs to understand later (why you chose X, how something works, research results), write a short `.md` file in the `docs/` folder and add it in the same PR.
+- **One topic per file**, lowercase names with hyphens, e.g. `docs/database.md`, `docs/data-sources.md`.
+- Suggested structure: **Context** (what problem), **Decision** (what we chose), **Why / Alternatives** (what we rejected and why).
+- If your change makes an existing doc outdated, update that file instead of creating a new one.
+- Small tasks that need no explanation: the PR description is enough.
+
 ### Staying up to date
 - Pull the latest `main` into your branch **at least once a day**.
 
