@@ -3,6 +3,50 @@
 Due diligence checks for construction companies.
 
 ---
+## Install the tools (once)
+
+### Docker Desktop
+1. Download it from https://www.docker.com/products/docker-desktop/ → **Download for Windows**.
+2. Run the installer and keep the default options (**Use WSL 2** ticked). Restart the computer if asked.
+3. Start **Docker Desktop** and wait until it shows **Engine running** (bottom left).
+4. Check in PowerShell:
+   ```powershell
+   docker --version
+   ```
+Docker Desktop must be **running** whenever you work with the database.
+
+### uv (Python package manager)
+1. In PowerShell run:
+   ```powershell
+   powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+   ```
+   (Alternative: `winget install --id=astral-sh.uv -e`)
+2. **Close and reopen** the terminal (in VS Code/PyCharm: restart the whole app), otherwise `uv` is not found.
+3. Check:
+   ```powershell
+   uv --version
+   ```
+You don't need to install Python separately – `uv` downloads the right version (3.13) automatically.
+
+---
+## Local database setup
+**Requirements:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) (running) and [uv](https://docs.astral.sh/uv/).
+
+Run once, from the project folder:
+
+```powershell
+Copy-Item .env.example .env                       # create your local settings file (never commit .env)
+docker compose -f infra/docker-compose.yml up -d  # start PostgreSQL 17 in Docker
+cd backend
+uv sync                                           # install Python packages
+uv run alembic upgrade head                       # create/update all tables in the database
+```
+
+- **After `git pull`**: run `uv run alembic upgrade head` again (in `backend`), in case someone added a new migration.
+- **After changing `app/db/models.py`**: create a migration with `uv run alembic revision --autogenerate -m "what changed"`, then `uv run alembic upgrade head`, and commit the new file in `app/db/migrations/versions/`.
+- **Stop the database**: `docker compose -f infra/docker-compose.yml down`
+
+---
 
 ## How we work
 
@@ -24,7 +68,14 @@ Due diligence checks for construction companies.
 - Ihor merges after approval.
 - Keep PRs small: **one Jira item per PR**, reviewable in about 15 minutes.
 
-## Documentation
+---
+
+### Staying up to date
+- Pull the latest `main` into your branch **at least once a day**.
+
+---
+
+### Documentation
 - There is **one README** for the whole project. Do not replace it – only add or update the lines your change affects (e.g. a new setup step or `.env` variable).
 - If your task includes a decision or something the team needs to understand later (why you chose X, how something works, research results), write a short `.md` file in the `docs/` folder and add it in the same PR.
 - **One topic per file**, lowercase names with hyphens, e.g. `docs/database.md`, `docs/data-sources.md`.
@@ -32,8 +83,6 @@ Due diligence checks for construction companies.
 - If your change makes an existing doc outdated, update that file instead of creating a new one.
 - Small tasks that need no explanation: the PR description is enough.
 
-### Staying up to date
-- Pull the latest `main` into your branch **at least once a day**.
 
 ---
 
@@ -109,7 +158,7 @@ git merge main
 
 ### 6. Open a pull request
 
-On GitHub, click **"Compare & pull request"** for your branch, fill in the template, and request a review from a teammate.
+On GitHub, click **"Compare & pull request"** for your branch, fill in the template, and request a review from Ihor (Ihor’s own PRs: from another teammate).
 
 ### 7. Address review feedback
 
