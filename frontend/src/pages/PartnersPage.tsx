@@ -1,7 +1,22 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
-import { Building2Icon, PlusIcon } from 'lucide-react'
+import {
+  Building2Icon,
+  CircleCheckIcon,
+  CircleXIcon,
+  PlusIcon,
+  SearchCheckIcon,
+  TriangleAlertIcon,
+} from 'lucide-react'
 
-import { ApiError, createPartner, listPartners, type Partner } from '@/api/partners'
+import {
+  ApiError,
+  createPartner,
+  listPartners,
+  runViesCheck,
+  type CheckResult,
+  type CheckStatus,
+  type Partner,
+} from '@/api/partners'
 import { PageHeader } from '@/components/page-header'
 import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -55,6 +70,12 @@ export function PartnersPage() {
   const [submitting, setSubmitting] = useState(false)
   const [announcement, setAnnouncement] = useState('')
   const [newPartnerId, setNewPartnerId] = useState<string | null>(null)
+
+  // VIES checks: which partners are being checked, and requests that failed.
+  const [checkingIds, setCheckingIds] = useState<ReadonlySet<string>>(new Set())
+  const [checkErrors, setCheckErrors] = useState<Record<string, string>>({})
+  const [freshCheckId, setFreshCheckId] = useState<string | null>(null)
+  const checkingRef = useRef(new Set<string>())
 
   const inputRef = useRef<HTMLInputElement>(null)
   // Blocks a second submit (e.g. a fast double Enter) before React re-renders.
@@ -117,11 +138,36 @@ export function PartnersPage() {
     }
   }
 
+  async function handleCheck(partner: Partner) {
+    // One check per partner at a time (e.g. a double click).
+    if (checkingRef.current.has(partner.id)) return
+    checkingRef.current.add(partner.id)
+    setCheckingIds(new Set(checkingRef.current))
+    setCheckErrors(({ [partner.id]: _old, ...rest }) => rest)
+    setAnnouncement(`Checking ${partner.vat_number} in VIES…`)
+
+    try {
+      const result = await runViesCheck(partner.id)
+      setPartners((current) =>
+        current.map((p) => (p.id === partner.id ? { ...p, latest_vies_check: result } : p)),
+      )
+      setFreshCheckId(result.id)
+      setAnnouncement(`${partner.vat_number}: ${STATUS_LABELS[result.status]}. ${result.message}`)
+    } catch (error) {
+      const message = errorMessage(error)
+      setCheckErrors((current) => ({ ...current, [partner.id]: message }))
+      setAnnouncement(`The check for ${partner.vat_number} could not run. ${message}`)
+    } finally {
+      checkingRef.current.delete(partner.id)
+      setCheckingIds(new Set(checkingRef.current))
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Partners"
-        description="Add a partner by its VAT number to run checks on it."
+        description="Add a partner by its VAT number and check it with the EU VIES service."
       />
 
       <Card>
@@ -174,7 +220,10 @@ export function PartnersPage() {
           <CardTitle>
             <h2>Partners</h2>
           </CardTitle>
-          <CardDescription>All partners of your organization, newest first.</CardDescription>
+          <CardDescription>
+            All partners of your organization, newest first. “Check” asks VIES whether the VAT
+            number is valid.
+          </CardDescription>
           {loadState.status === 'ready' && partners.length > 0 && (
             <CardAction>
               <Badge variant="secondary" className="tabular-nums">
@@ -215,24 +264,62 @@ export function PartnersPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>VAT number</TableHead>
-                  <TableHead className="text-right">Added</TableHead>
+                  <TableHead>VIES result</TableHead>
+                  <TableHead className="text-right max-md:hidden">Added</TableHead>
+                  <TableHead className="text-right max-sm:hidden">
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {partners.map((partner) => (
-                  <TableRow
-                    key={partner.id}
-                    data-new={partner.id === newPartnerId ? true : undefined}
-                    className="data-new:animate-row-enter motion-reduce:data-new:animate-row-highlight"
-                  >
-                    <TableCell className="font-mono tracking-wide">{partner.vat_number}</TableCell>
-                    <TableCell className="text-right text-muted-foreground tabular-nums">
-                      <time dateTime={partner.created_at}>
-                        {dateFormat.format(new Date(partner.created_at))}
-                      </time>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {partners.map((partner) => {
+                  const check = partner.latest_vies_check
+                  const checking = checkingIds.has(partner.id)
+                  const companyName = check?.status === 'VALID' ? check.company_name : null
+                  return (
+                    <TableRow
+                      key={partner.id}
+                      data-new={partner.id === newPartnerId ? true : undefined}
+                      className="data-new:animate-row-enter motion-reduce:data-new:animate-row-highlight"
+                    >
+                      <TableCell className="align-top">
+                        <div className="font-mono tracking-wide">{partner.vat_number}</div>
+                        {companyName && (
+                          <div className="max-w-56 truncate text-xs text-muted-foreground" title={companyName}>
+                            {companyName}
+                          </div>
+                        )}
+                        {/* Small screens: no room for an extra column, so the button sits here. */}
+                        <CheckButton
+                          className="mt-2 sm:hidden"
+                          partner={partner}
+                          checking={checking}
+                          onCheck={handleCheck}
+                        />
+                      </TableCell>
+                      <TableCell className="min-w-44 align-top whitespace-normal">
+                        {check ? (
+                          <ViesResult check={check} fresh={check.id === freshCheckId} />
+                        ) : (
+                          <span className="text-muted-foreground">Not checked yet</span>
+                        )}
+                        {checkErrors[partner.id] && (
+                          <p className="mt-1 text-xs text-destructive">
+                            Check could not run: {checkErrors[partner.id]}
+                          </p>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right align-top text-muted-foreground tabular-nums max-md:hidden">
+                        <time dateTime={partner.created_at}>
+                          {dateFormat.format(new Date(partner.created_at))}
+                        </time>
+                      </TableCell>
+                      <TableCell className="text-right align-top max-sm:hidden">
+                        <CheckButton partner={partner} checking={checking} onCheck={handleCheck} />
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
               </TableBody>
             </Table>
           )}
@@ -243,6 +330,82 @@ export function PartnersPage() {
         {announcement}
       </p>
     </div>
+  )
+}
+
+function CheckButton({
+  partner,
+  checking,
+  onCheck,
+  className,
+}: {
+  partner: Partner
+  checking: boolean
+  onCheck: (partner: Partner) => void
+  className?: string
+}) {
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      className={className}
+      disabled={checking}
+      onClick={() => onCheck(partner)}
+    >
+      {checking ? <Spinner data-icon="inline-start" /> : <SearchCheckIcon data-icon="inline-start" />}
+      {checking ? 'Checking…' : partner.latest_vies_check ? 'Check Again' : 'Check'}
+      <span className="sr-only"> {partner.vat_number} in VIES</span>
+    </Button>
+  )
+}
+
+const STATUS_LABELS: Record<CheckStatus, string> = {
+  VALID: 'Valid',
+  INVALID: 'Invalid',
+  ERROR: 'Error',
+}
+
+function ViesResult({ check, fresh }: { check: CheckResult; fresh: boolean }) {
+  return (
+    <div
+      data-fresh={fresh ? true : undefined}
+      className="flex flex-col items-start gap-1 data-fresh:animate-in data-fresh:fade-in-0 data-fresh:duration-200 data-fresh:ease-out-strong motion-reduce:animate-none"
+    >
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <StatusBadge status={check.status} />
+        <time dateTime={check.checked_at} className="text-xs text-muted-foreground tabular-nums">
+          {dateFormat.format(new Date(check.checked_at))}
+        </time>
+      </div>
+      {check.status !== 'VALID' && (
+        <p className="text-xs text-muted-foreground">{check.message}</p>
+      )}
+    </div>
+  )
+}
+
+function StatusBadge({ status }: { status: CheckStatus }) {
+  if (status === 'VALID') {
+    return (
+      <Badge variant="outline">
+        <CircleCheckIcon data-icon="inline-start" className="text-emerald-600 dark:text-emerald-400" />
+        {STATUS_LABELS.VALID}
+      </Badge>
+    )
+  }
+  if (status === 'INVALID') {
+    return (
+      <Badge variant="destructive">
+        <CircleXIcon data-icon="inline-start" />
+        {STATUS_LABELS.INVALID}
+      </Badge>
+    )
+  }
+  return (
+    <Badge variant="outline">
+      <TriangleAlertIcon data-icon="inline-start" className="text-amber-600 dark:text-amber-400" />
+      {STATUS_LABELS.ERROR}
+    </Badge>
   )
 }
 
