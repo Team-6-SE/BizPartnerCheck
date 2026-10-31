@@ -9,12 +9,12 @@
 |---|---|---|
 | **Backend** | **Python 3.13 + FastAPI**, SQLAlchemy 2 + Alembic, Pydantic v2, httpx | The whole team already works in Python (PyCharm). FastAPI generates the OpenAPI 3.1 document we must publish. Async `httpx` calls the 5 sources in parallel: 8 s timeout and max. 2 retries per call, 30 s hard limit per run; target is a full run in ≤ 15 s (95 % of runs). |
 | **Background jobs** | **Celery + Redis**, Celery Beat | A check run is started via `POST /api/v1/checks` → `202` and runs in a worker. Celery Beat runs the BMF update every 30 min, the daily list import and the retention job. |
-| **Frontend** | **React + TypeScript** (Vite), react-i18next, oidc-client-ts | Single-page app that uses the same `/api/v1` as the ERP, so web and API always give the same result. German/English texts in language files. Biggest ecosystem and lots of learning material. |
+| **Frontend** | **React + TypeScript** (Vite), **Tailwind CSS + shadcn/ui** (Base UI), react-i18next, oidc-client-ts | Single-page app that uses the same `/api/v1` as the ERP, so web and API always give the same result. German/English texts in language files. Biggest ecosystem and lots of learning material. |
 | **Database** | **PostgreSQL 17** | Relational data with real constraints (organizations, users, runs, results), JSONB for the raw source answers, transactions so a run is stored completely or marked incomplete, triggers that block changes to stored runs, fast filters for the history. |
 | **Identity** | **Keycloak** (self-hosted, open source) | We must not build authentication ourselves (CON-07). Gives OIDC sign-in, password policy and lockout, reset and invitation e-mails, and OAuth 2.0 client credentials for API tokens. Runs in Docker, no cloud dependency. *To confirm with the customer (OI-10).* |
 | **PDF reports** | **WeasyPrint** (HTML/CSS templates → PDF) | Same Jinja2 templates in German and English. |
 | **Deployment** | **Docker Compose** on one Linux VM, **Caddy** as reverse proxy | Install with one command, no proprietary cloud. Caddy handles TLS automatically. |
-| **CI / quality** | **GitHub Actions**: ruff, pytest + coverage, ESLint + Vitest, Docker build, dependency audit | Every PR is built and tested, ≥ 70 % coverage for rules and adapters, library check. |
+| **CI / quality** | **GitHub Actions**: ruff, pytest + coverage, oxlint + Vitest, Docker build, dependency audit | Every PR is built and tested, ≥ 70 % coverage for rules and adapters, library check. |
 
 Tooling: `uv` for Python dependencies, `ruff` for lint + format, `npm` for the frontend, Mailpit as a fake mail server in development.
 

@@ -28,6 +28,16 @@ Docker Desktop must be **running** whenever you work with the database.
    ```
 You don't need to install Python separately – `uv` downloads the right version (3.13) automatically.
 
+### Node.js (for the frontend)
+1. Download the **LTS** version from https://nodejs.org/ (version 22 or newer) and run the installer with the default options.
+   (Alternative: `winget install OpenJS.NodeJS.LTS`)
+2. **Close and reopen** the terminal.
+3. Check:
+   ```powershell
+   node --version
+   npm --version
+   ```
+
 ---
 ## Local database setup
 **Requirements:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) (running) and [uv](https://docs.astral.sh/uv/).
@@ -45,6 +55,38 @@ uv run alembic upgrade head                       # create/update all tables in 
 - **After `git pull`**: run `uv run alembic upgrade head` again (in `backend`), in case someone added a new migration.
 - **After changing `app/db/models.py`**: create a migration with `uv run alembic revision --autogenerate -m "what changed"`, then `uv run alembic upgrade head`, and commit the new file in `app/db/migrations/versions/`.
 - **Stop the database**: `docker compose -f infra/docker-compose.yml down`
+
+---
+## Run the backend (API)
+**Requirements:** the database is running (see above).
+
+```powershell
+cd backend
+uv run uvicorn app.main:app --reload   # starts the API on http://localhost:8000
+```
+
+- Health check: http://localhost:8000/health → `{"status": "ok"}`
+- Interactive API docs: http://localhost:8000/docs
+- Run the tests: `uv run pytest` (in `backend`, database must be running)
+
+---
+## Run the frontend (web app)
+**Requirements:** [Node.js](https://nodejs.org/) LTS and the backend running (see above).
+
+Run once, from the project folder:
+
+```powershell
+cd frontend
+npm install        # install packages (again after `git pull` if package.json changed)
+```
+
+Then start it:
+
+```powershell
+npm run dev        # opens on http://localhost:5173
+```
+
+The web app calls the backend through `/api`, which the dev server forwards to http://localhost:8000.
 
 ---
 
