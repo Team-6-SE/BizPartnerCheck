@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: bizpartner
+          POSTGRES_PASSWORD: bizpartner
+          POSTGRES_DB: bizpartner
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-retries 5
+    defaults:
+      run:
+        working-directory: backend
+    env:
+        DATABASE_URL: postgresql+psycopg://bizpartner:bizpartner@localhost:5432/bizpartner
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.13
+      - run: uv sync
+      - run: uv run alembic upgrade head
+      - run: uv run pytest
