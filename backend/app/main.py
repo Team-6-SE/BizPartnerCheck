@@ -8,16 +8,19 @@ from app.partners.router import router as partners_router
 
 app = FastAPI(title="BizPartnerCheck API", version="0.1.0")
 
+REQUEST_PARTS = {"body", "path", "query", "header", "cookie"}
+
 
 @app.exception_handler(RequestValidationError)
 def invalid_request(_request: Request, exc: RequestValidationError) -> JSONResponse:
     """Missing or wrongly typed fields use the same error format as all other errors."""
     first = exc.errors()[0] if exc.errors() else {}
-    # loc looks like ("body", "vat_number"); numbers are positions, not field names.
+    # loc looks like ("body", "vat_number") or ("path", "partner_id");
+    # numbers are positions, not field names.
     location = [
         part
         for part in first.get("loc", ())
-        if isinstance(part, str) and part != "body"
+        if isinstance(part, str) and part not in REQUEST_PARTS
     ]
     field = ".".join(location) or None
     reason = first.get("msg", "Invalid request.")

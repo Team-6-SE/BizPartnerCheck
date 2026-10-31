@@ -67,7 +67,8 @@ uv run uvicorn app.main:app --reload   # starts the API on http://localhost:8000
 
 - Health check: http://localhost:8000/health → `{"status": "ok"}`
 - Interactive API docs: http://localhost:8000/docs
-- Run the tests: `uv run pytest` (in `backend`, database must be running)
+- Run the tests: `uv run pytest` (in `backend`, database must be running). The tests never call the real VIES service.
+- The **Check** button (VIES) needs internet: it asks the EU VIES service. Details: [docs/vies.md](docs/vies.md)
 
 ---
 ## Run the frontend (web app)

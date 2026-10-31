@@ -1,7 +1,20 @@
+export type CheckStatus = 'VALID' | 'INVALID' | 'ERROR'
+
+export type CheckResult = {
+  id: string
+  source: string
+  status: CheckStatus
+  checked_at: string
+  /** Explanation for people, e.g. why the check gave ERROR. */
+  message: string
+  company_name: string | null
+}
+
 export type Partner = {
   id: string
   vat_number: string
   created_at: string
+  latest_vies_check: CheckResult | null
 }
 
 /** An error the user can read. `code` comes from the backend, e.g. "duplicate_partner". */
@@ -19,15 +32,17 @@ export class ApiError extends Error {
 
 const SERVER_UNAVAILABLE = 'The server is not reachable. Is the backend running?'
 const TIMEOUT_MS = 15_000
+// The backend waits up to 30 s for VIES (3 tries of 8 s), so wait a bit longer here.
+const CHECK_TIMEOUT_MS = 40_000
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestInit, timeoutMs = TIMEOUT_MS): Promise<T> {
   let response: Response
   try {
     response = await fetch(`/api/v1${path}`, {
       ...init,
       headers: { 'Content-Type': 'application/json', ...init?.headers },
-      // Never spin forever: give up after 15 s.
-      signal: init?.signal ?? AbortSignal.timeout(TIMEOUT_MS),
+      // Never spin forever.
+      signal: init?.signal ?? AbortSignal.timeout(timeoutMs),
     })
   } catch (error) {
     if (error instanceof DOMException && error.name === 'TimeoutError') {
@@ -70,4 +85,13 @@ export function createPartner(vatNumber: string): Promise<Partner> {
     method: 'POST',
     body: JSON.stringify({ vat_number: vatNumber }),
   })
+}
+
+/** Ask VIES now. ERROR is a normal result ("could not confirm"), not a thrown error. */
+export function runViesCheck(partnerId: string): Promise<CheckResult> {
+  return request<CheckResult>(
+    `/partners/${encodeURIComponent(partnerId)}/checks/vies`,
+    { method: 'POST' },
+    CHECK_TIMEOUT_MS,
+  )
 }
