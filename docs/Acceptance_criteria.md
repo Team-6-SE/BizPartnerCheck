@@ -85,16 +85,3 @@ Business licence register. Free public SOAP interface in two stages; we need sta
 | VIES | nothing | – | Not needed | Use test endpoint for development |
 | BMF list | nothing | – | Not needed | Public RSS + CSV |
 | ÖGK HFU | nothing | – | Not needed | Needs a requester ID |
-
-## Open questions
-
-| Question | Who | Status |
-| --- | --- | --- |
-| May we use ÖGK without own DGNR? | Cloves | asked 30.10, waiting |
-| Firmenbuch offers (ADVOKAT, HF Data, MANZ) | Cloves | waiting |
-| Who has an Austrian e-ID for GISA? | TBD | open |
-| Can we use a real company UID / DGNR as requester in VIES and HFU calls, or stay on test endpoints only? | TBD | open |
-| Who holds the personal GISA key and Firmenbuch token, a student or the customer? | TBD | open |
-| Is a test environment available for the Firmenbuch HVD API? | TBD | open |
-| Does Firmenbuch HVD include managing directors (needed for the person-based risk check)? | TBD | open |
-| Does GISA name search for risk checks fit the "single entity, no mass query" terms? | TBD | open |
