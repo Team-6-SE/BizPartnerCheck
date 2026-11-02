@@ -11,7 +11,7 @@ Research from SCRUM-26 (state: 30.10.2026). Update this file when answers arrive
 
 ## Overview
 
-| Source | Access method | Registration | Test environment | Lim
+| Source | Access method | Registration | Test environment | Limits
 | --- | --- | --- | --- | --- |
 | VIES | REST (JSON) + SOAP | none | yes, test endpoint with fixed test numbers | rate limits not published; member-state outages |
 | ÖGK HFU | SOAP v3.0 + web client | none found, but requester ID needed | yes, separate test endpoint | max 50 contractors per request |
