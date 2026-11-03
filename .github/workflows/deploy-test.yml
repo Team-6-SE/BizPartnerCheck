@@ -1,0 +1,57 @@
+name: SCRUM-33 test deployment
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-environment
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate smoke-test files
+        run: |
+          test -f infra/test/compose.yml
+          test -f infra/test/index.html
+          docker compose -f infra/test/compose.yml config --quiet
+      - name: Configure SSH
+        env:
+          TEST_SSH_PRIVATE_KEY: ${{ secrets.TEST_SSH_PRIVATE_KEY }}
+          TEST_HOST: ${{ secrets.TEST_HOST }}
+          TEST_USER: ${{ secrets.TEST_USER }}
+          TEST_SSH_HOST_KEY: ${{ secrets.TEST_SSH_HOST_KEY }}
+        run: |
+          test -n "$TEST_SSH_PRIVATE_KEY" && test -n "$TEST_HOST" && test -n "$TEST_USER" && test -n "$TEST_SSH_HOST_KEY" || { echo 'Missing deployment secrets' >&2; exit 1; }
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$TEST_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$TEST_SSH_HOST_KEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Copy test files to server
+        env:
+          TEST_HOST: ${{ secrets.TEST_HOST }}
+          TEST_USER: ${{ secrets.TEST_USER }}
+        run: |
+          ssh -o StrictHostKeyChecking=yes "$TEST_USER@$TEST_HOST" 'mkdir -p ~/bizpartnercheck-test'
+          scp -o StrictHostKeyChecking=yes infra/test/compose.yml infra/test/index.html "$TEST_USER@$TEST_HOST:~/bizpartnercheck-test/"
+      - name: Start test container
+        env:
+          TEST_HOST: ${{ secrets.TEST_HOST }}
+          TEST_USER: ${{ secrets.TEST_USER }}
+        run: |
+          ssh -o StrictHostKeyChecking=yes "$TEST_USER@$TEST_HOST" 'cd ~/bizpartnercheck-test && docker compose -p bizpartnercheck-test -f compose.yml up -d --remove-orphans'
+      - name: Check published test URL
+        env:
+          TEST_URL: ${{ secrets.TEST_URL }}
+        run: |
+          test -n "$TEST_URL" || { echo 'Missing TEST_URL secret' >&2; exit 1; }
+          curl --fail --show-error --location --retry 5 --retry-delay 3 --max-time 20 "$TEST_URL" | grep -q 'BizPartnerCheck'

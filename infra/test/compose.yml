@@ -1,0 +1,9 @@
+# Isolated temporary SCRUM-33 smoke test. Do not replace infra/docker-compose.yml.
+services:
+  web:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "${TEST_HTTP_PORT:-8080}:80"
+    volumes:
+      - ./index.html:/usr/share/caddy/index.html:ro
