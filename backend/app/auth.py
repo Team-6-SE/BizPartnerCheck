@@ -36,11 +36,15 @@ ALGORITHMS = ["RS256"]
 LEEWAY_SECONDS = 30
 
 
+ORG_ADMIN_ROLE = "org-admin"
+
+
 @dataclass(frozen=True)
 class CurrentUser:
     id: str  # Keycloak user ID ("sub"), stable even if the e-mail changes
     email: str | None
     name: str | None
+    roles: frozenset[str] = frozenset()  # Keycloak realm roles, e.g. "org-admin"
 
 
 class TokenError(Exception):
@@ -105,10 +109,15 @@ class TokenVerifier:
         if claims.get("typ", "Bearer") != "Bearer":
             raise TokenError("invalid_token", "The sign-in token is not valid.")
 
+        realm_access = claims.get("realm_access")
+        roles = realm_access.get("roles") if isinstance(realm_access, dict) else None
+        if not isinstance(roles, list):
+            roles = []  # anything else is not from our Keycloak: no roles
         return CurrentUser(
             id=claims["sub"],
             email=claims.get("email"),
             name=claims.get("name") or claims.get("preferred_username"),
+            roles=frozenset(role for role in roles if isinstance(role, str)),
         )
 
 
@@ -168,3 +177,23 @@ def get_current_user(
 
 
 AuthenticatedUser = Annotated[CurrentUser, Depends(get_current_user)]
+
+
+def require_role(role: str, message: str) -> Callable[[CurrentUser], CurrentUser]:
+    """FastAPI dependency factory: the signed-in user must have `role`, otherwise 403."""
+
+    def check(user: AuthenticatedUser) -> CurrentUser:
+        if role not in user.roles:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                detail=error_body("forbidden", message)["detail"],
+            )
+        return user
+
+    return check
+
+
+OrgAdmin = Annotated[
+    CurrentUser,
+    Depends(require_role(ORG_ADMIN_ROLE, "Only organisation admins can do this.")),
+]

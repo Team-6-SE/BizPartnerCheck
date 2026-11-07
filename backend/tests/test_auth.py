@@ -56,7 +56,35 @@ def test_valid_token_is_accepted(anonymous_client: TestClient, tokens) -> None:
         "id": "user-1",
         "email": "anna@example.com",
         "name": "Anna Muster",
+        "roles": [],
     }
+
+
+def test_me_lists_realm_roles(anonymous_client: TestClient, tokens) -> None:
+    token = tokens.make(
+        extra={
+            "realm_access": {"roles": ["org-admin", "default-roles-bizpartnercheck"]}
+        }
+    )
+
+    response = call(anonymous_client, "GET", "/api/v1/me", token)
+
+    assert response.json()["roles"] == ["default-roles-bizpartnercheck", "org-admin"]
+
+
+@pytest.mark.parametrize(
+    "realm_access",
+    [None, "org-admin", {"roles": "org-admin"}, {"roles": [1, None]}, {}],
+)
+def test_malformed_roles_give_no_roles(
+    anonymous_client: TestClient, tokens, realm_access
+) -> None:
+    token = tokens.make(extra={"realm_access": realm_access})
+
+    response = call(anonymous_client, "GET", "/api/v1/me", token)
+
+    assert response.status_code == 200
+    assert response.json()["roles"] == []
 
 
 def test_health_needs_no_token(anonymous_client: TestClient) -> None:

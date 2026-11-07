@@ -4,11 +4,14 @@ import {
   KeyRoundIcon,
   LayoutDashboardIcon,
   type LucideIcon,
+  ScrollTextIcon,
   SearchCheckIcon,
   Settings2Icon,
   ShieldIcon,
   UsersIcon,
 } from 'lucide-react'
+
+import { ORG_ADMIN_ROLE } from '@/auth/roles'
 
 export type NavItem = {
   title: string
@@ -16,6 +19,8 @@ export type NavItem = {
   icon: LucideIcon
   /** Only exact match marks the item active (for "/"). */
   end?: boolean
+  /** Shown only to users with this Keycloak role (the backend checks it again). */
+  role?: string
 }
 
 export type NavGroup = {
@@ -23,7 +28,7 @@ export type NavGroup = {
   items: NavItem[]
 }
 
-/** All screens of the web app (SRS 3.1.1). Only "Partners" works so far. */
+/** All screens of the web app (SRS 3.1.1). "Partners" and "Security Log" work so far. */
 export const navigation: NavGroup[] = [
   {
     title: 'Checks',
@@ -43,6 +48,7 @@ export const navigation: NavGroup[] = [
       { title: 'API Tokens', url: '/settings/api-tokens', icon: KeyRoundIcon },
       { title: 'Users', url: '/settings/users', icon: UsersIcon },
       { title: 'Settings', url: '/settings/organization', icon: Settings2Icon },
+      { title: 'Security Log', url: '/settings/security-log', icon: ScrollTextIcon, role: ORG_ADMIN_ROLE },
     ],
   },
   {
@@ -50,6 +56,13 @@ export const navigation: NavGroup[] = [
     items: [{ title: 'Organizations', url: '/admin/organizations', icon: ShieldIcon }],
   },
 ]
+
+/** The menu for a user with these roles (groups without visible items are left out). */
+export function visibleNavigation(roles: ReadonlySet<string>): NavGroup[] {
+  return navigation
+    .map((group) => ({ ...group, items: group.items.filter((item) => !item.role || roles.has(item.role)) }))
+    .filter((group) => group.items.length > 0)
+}
 
 export function isActive(item: NavItem, pathname: string): boolean {
   if (item.end) return pathname === item.url

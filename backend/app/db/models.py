@@ -78,3 +78,49 @@ class CheckResult(Base):
     )
     # The answer of the source exactly as received (or what went wrong).
     raw_response: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class SecurityEvent(Base):
+    """Security log: sign-ins, failed sign-ins, user and role changes, tokens, exports.
+
+    Append-only: a database trigger refuses UPDATE, and DELETE unless a deletion was
+    explicitly allowed (retention, removing an organisation). See docs/security-log.md.
+    """
+
+    __tablename__ = "security_events"
+    __table_args__ = (
+        Index(
+            "ix_security_events_organization_time",
+            "organization_id",
+            "occurred_at",
+            "id",
+        ),
+        # Events copied from Keycloak are stored only once, however often we sync.
+        Index(
+            "uq_security_events_source_external_id",
+            "source",
+            "external_id",
+            unique=True,
+            postgresql_where="external_id IS NOT NULL",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    # Empty for events that belong to no customer (e.g. a failed sign-in with an unknown e-mail).
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("organizations.id"), nullable=True
+    )
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    # Who did it (Keycloak user ID and e-mail), and whom it concerns (e.g. the changed user).
+    actor_id: Mapped[str | None] = mapped_column(String(64))
+    actor_email: Mapped[str | None] = mapped_column(String(320))
+    subject_id: Mapped[str | None] = mapped_column(String(64))
+    subject_email: Mapped[str | None] = mapped_column(String(320))
+    ip_address: Mapped[str | None] = mapped_column(String(64))
+    source: Mapped[str] = mapped_column(String(20), nullable=False)  # "keycloak" or "app"
+    external_id: Mapped[str | None] = mapped_column(String(80))
+    details: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

@@ -91,7 +91,7 @@ html.login-pf,
 }
 
 .pf-v5-c-login__container {
-  grid-template-columns: minmax(0, 24.5rem);
+  grid-template-columns: minmax(0, 26rem);
 }
 
 /* Logo + name above the card, like the app's own sign-in page */
@@ -354,4 +354,45 @@ html.login-pf,
   .pf-v5-c-button.pf-m-primary:active {
     scale: 1;
   }
+}
+
+/* ---------------------------------------------------------------- "Restart login" tooltip */
+
+/* The button next to the e-mail on the pages after the password (e.g. one-time code).
+   Keycloak shows its tooltip to the right, where the card edge (overflow: hidden) cuts it off.
+   Here it looks like the app's tooltips and sits above the button, inside the card. */
+.kc-login-tooltip .kc-tooltip-text {
+  top: auto;
+  bottom: calc(100% + 0.375rem);
+  left: auto;
+  right: 0;
+  z-index: 10;
+  width: max-content;
+  min-width: 0;
+  max-width: 14rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: calc(var(--bpc-radius) * 0.8);
+  background: var(--bpc-foreground);
+  color: var(--bpc-card);
+  box-shadow: none;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1rem;
+  white-space: nowrap;
+  pointer-events: none;
+  transition: opacity 150ms ease-out;
+}
+
+.kc-login-tooltip:hover .kc-tooltip-text,
+.kc-login-tooltip:focus-visible .kc-tooltip-text {
+  visibility: visible;
+  opacity: 1;
+}
+
+.kc-login-tooltip .kc-tooltip-text::after {
+  top: 100%;
+  right: calc(1.125rem - 4px);
+  margin-top: 0;
+  border-width: 4px;
+  border-color: var(--bpc-foreground) transparent transparent transparent;
 }

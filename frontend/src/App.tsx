@@ -18,11 +18,12 @@ const NewCheckPage = lazy(() => import('@/pages/NewCheckPage').then((m) => ({ de
 const NotFoundPage = lazy(() => import('@/pages/NotFoundPage').then((m) => ({ default: m.NotFoundPage })))
 const OrganizationSettingsPage = lazy(() => import('@/pages/OrganizationSettingsPage').then((m) => ({ default: m.OrganizationSettingsPage })))
 const OrganizationsPage = lazy(() => import('@/pages/OrganizationsPage').then((m) => ({ default: m.OrganizationsPage })))
+const SecurityLogPage = lazy(() => import('@/pages/SecurityLogPage').then((m) => ({ default: m.SecurityLogPage })))
 const PartnersPage = lazy(() => import('@/pages/PartnersPage').then((m) => ({ default: m.PartnersPage })))
 const SignInPage = lazy(() => import('@/pages/SignInPage').then((m) => ({ default: m.SignInPage })))
 const UsersPage = lazy(() => import('@/pages/UsersPage').then((m) => ({ default: m.UsersPage })))
 
-// Screens from SRS 3.1.1. Only "Partners" is connected to the backend so far.
+// Screens from SRS 3.1.1. "Partners" and "Security Log" are connected to the backend so far.
 function App() {
   const auth = useAuth()
 
@@ -67,6 +68,7 @@ function App() {
               <Route path="settings/api-tokens" element={<ApiTokensPage />} />
               <Route path="settings/users" element={<UsersPage />} />
               <Route path="settings/organization" element={<OrganizationSettingsPage />} />
+              <Route path="settings/security-log" element={<SecurityLogPage />} />
               <Route path="admin/organizations" element={<OrganizationsPage />} />
               <Route path="*" element={<NotFoundPage />} />
             </Route>
