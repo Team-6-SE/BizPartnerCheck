@@ -1,0 +1,357 @@
+/*
+ * BizPartnerCheck look for Keycloak's sign-in pages.
+ * Colours, radius and font follow frontend/src/index.css (shadcn/ui, neutral) so the
+ * sign-in feels like part of the app. Light/dark follows the operating system.
+ */
+
+@font-face {
+  font-family: 'Geist Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('../fonts/geist-latin-ext-wght-normal.woff2') format('woff2-variations');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Geist Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('../fonts/geist-latin-wght-normal.woff2') format('woff2-variations');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* ---------------------------------------------------------------- tokens */
+
+:root {
+  --bpc-page: oklch(0.985 0 0);
+  --bpc-card: oklch(1 0 0);
+  --bpc-foreground: oklch(0.145 0 0);
+  --bpc-muted-foreground: oklch(0.556 0 0);
+  --bpc-border: oklch(0.922 0 0);
+  --bpc-input: oklch(0.922 0 0);
+  --bpc-input-bg: oklch(1 0 0);
+  --bpc-primary: oklch(0.205 0 0);
+  --bpc-primary-hover: oklch(0.205 0 0 / 0.85);
+  --bpc-primary-foreground: oklch(0.985 0 0);
+  --bpc-accent: oklch(0.97 0 0);
+  --bpc-ring: oklch(0.708 0 0);
+  --bpc-destructive: oklch(0.577 0.245 27.325);
+  --bpc-radius: 0.625rem;
+  --bpc-font: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+
+  /* PatternFly tokens used by Keycloak's pages */
+  --pf-v5-global--FontFamily--text: var(--bpc-font);
+  --pf-v5-global--FontFamily--heading: var(--bpc-font);
+  --pf-v5-global--FontFamily--text--vf: var(--bpc-font);
+  --pf-v5-global--FontFamily--heading--vf: var(--bpc-font);
+  --pf-v5-global--primary-color--100: var(--bpc-primary);
+  --pf-v5-global--primary-color--200: var(--bpc-primary-hover);
+  --pf-v5-global--link--Color: var(--bpc-foreground);
+  --pf-v5-global--link--Color--hover: var(--bpc-foreground);
+  --pf-v5-global--Color--100: var(--bpc-foreground);
+  --pf-v5-global--Color--200: var(--bpc-muted-foreground);
+  --pf-v5-global--danger-color--100: var(--bpc-destructive);
+  --pf-v5-global--BackgroundColor--100: var(--bpc-input-bg);
+  --keycloak-card-top-color: transparent;
+}
+
+.pf-v5-theme-dark {
+  --bpc-page: oklch(0.145 0 0);
+  --bpc-card: oklch(0.205 0 0);
+  --bpc-foreground: oklch(0.985 0 0);
+  --bpc-muted-foreground: oklch(0.708 0 0);
+  --bpc-border: oklch(1 0 0 / 10%);
+  --bpc-input: oklch(1 0 0 / 15%);
+  --bpc-input-bg: oklch(1 0 0 / 4.5%);
+  --bpc-primary: oklch(0.922 0 0);
+  --bpc-primary-hover: oklch(0.922 0 0 / 0.85);
+  --bpc-primary-foreground: oklch(0.205 0 0);
+  --bpc-accent: oklch(0.269 0 0);
+  --bpc-ring: oklch(0.556 0 0);
+  --bpc-destructive: oklch(0.704 0.191 22.216);
+}
+
+/* ---------------------------------------------------------------- page */
+
+html.login-pf,
+.login-pf body {
+  background: var(--bpc-page);
+  color: var(--bpc-foreground);
+  font-family: var(--bpc-font);
+  -webkit-font-smoothing: antialiased;
+}
+
+.pf-v5-c-login {
+  --pf-v5-c-login--BackgroundColor: var(--bpc-page);
+  background: var(--bpc-page);
+}
+
+.pf-v5-c-login__container {
+  grid-template-columns: minmax(0, 24.5rem);
+}
+
+/* Logo + name above the card, like the app's own sign-in page */
+#kc-header-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  font-family: var(--bpc-font);
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-transform: none;
+  line-height: 1.3;
+  color: var(--bpc-foreground) !important;
+}
+
+#kc-header-wrapper::before {
+  content: '';
+  width: 2.5rem;
+  height: 2.5rem;
+  background: url('../img/logo.svg') center / contain no-repeat;
+}
+
+/* ---------------------------------------------------------------- card */
+
+.pf-v5-c-login__main {
+  --pf-v5-c-login__main--BackgroundColor: var(--bpc-card);
+  background: var(--bpc-card);
+  border: 1px solid var(--bpc-border);
+  border-radius: calc(var(--bpc-radius) * 1.4);
+  box-shadow: 0 1px 2px oklch(0 0 0 / 5%);
+  overflow: hidden;
+}
+
+.pf-v5-c-login__main-header {
+  border-top: 0;
+  padding-top: 1.75rem;
+  row-gap: 0.75rem;
+}
+
+#kc-page-title,
+.pf-v5-c-login__main-header .pf-v5-c-title {
+  font-family: var(--bpc-font);
+  font-size: 1.125rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--bpc-foreground);
+}
+
+.pf-v5-c-login__main-body {
+  padding-bottom: 1.75rem;
+}
+
+/* ---------------------------------------------------------------- form */
+
+.pf-v5-c-form__label-text,
+.pf-v5-c-form__label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--bpc-foreground);
+}
+
+.pf-v5-c-form-control {
+  --pf-v5-c-form-control--BackgroundColor: var(--bpc-input-bg);
+  --pf-v5-c-form-control--Color: var(--bpc-foreground);
+  --pf-v5-c-form-control--BorderRadius: var(--bpc-radius);
+  background: var(--bpc-input-bg);
+  border-radius: calc(var(--bpc-radius) * 0.8);
+  color: var(--bpc-foreground);
+  font-size: 0.9375rem;
+}
+
+/* One even border instead of PatternFly's underline style */
+.pf-v5-c-form-control::before {
+  border: 1px solid var(--bpc-input);
+  border-radius: inherit;
+}
+
+.pf-v5-c-form-control::after {
+  border: 0;
+}
+
+.pf-v5-c-form-control:focus-within {
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--bpc-ring) 50%, transparent);
+}
+
+.pf-v5-c-form-control:focus-within::before {
+  border-color: var(--bpc-ring);
+}
+
+.pf-v5-c-form-control.pf-m-error::before,
+.pf-v5-c-form-control:has([aria-invalid='true'])::before {
+  border-color: var(--bpc-destructive);
+}
+
+.pf-v5-c-form-control > input,
+.pf-v5-c-form-control > select {
+  color: var(--bpc-foreground);
+  font-family: var(--bpc-font);
+}
+
+/* The soft ring around the field is the focus indicator, not the browser outline. */
+.pf-v5-c-form-control > input:focus,
+.pf-v5-c-form-control > input:focus-visible,
+.pf-v5-c-form-control > select:focus,
+.pf-v5-c-form-control > select:focus-visible {
+  outline: none;
+}
+
+/* Password field + "show password" button as one control with one focus ring */
+.pf-v5-c-input-group {
+  gap: 0;
+  border-radius: calc(var(--bpc-radius) * 0.8);
+}
+
+.pf-v5-c-input-group:focus-within {
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--bpc-ring) 50%, transparent);
+}
+
+.pf-v5-c-input-group .pf-v5-c-form-control:focus-within {
+  box-shadow: none;
+}
+
+.pf-v5-c-input-group__item:first-child .pf-v5-c-form-control {
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+}
+
+.pf-v5-c-input-group .pf-v5-c-button.pf-m-control {
+  --pf-v5-c-button--m-control--BackgroundColor: var(--bpc-input-bg);
+  --pf-v5-c-button--m-control--Color: var(--bpc-muted-foreground);
+  --pf-v5-c-button--m-control--hover--Color: var(--bpc-foreground);
+  --pf-v5-c-button--m-control--after--BorderColor: var(--bpc-input);
+  --pf-v5-c-button--m-control--after--BorderBottomColor: var(--bpc-input);
+  --pf-v5-c-button--m-control--hover--after--BorderBottomColor: var(--bpc-input);
+  --pf-v5-c-button--m-control--focus--after--BorderBottomColor: var(--bpc-ring);
+  --pf-v5-c-button--m-control--active--after--BorderBottomColor: var(--bpc-input);
+  border-radius: 0 calc(var(--bpc-radius) * 0.8) calc(var(--bpc-radius) * 0.8) 0;
+}
+
+.pf-v5-c-input-group .pf-v5-c-button.pf-m-control::after {
+  border: 1px solid var(--bpc-input);
+  border-inline-start: 0;
+  border-radius: inherit;
+}
+
+/* Language picker in the card header */
+.pf-v5-c-login__main-header-utilities .pf-v5-c-form-control {
+  font-size: 0.875rem;
+}
+
+/* ---------------------------------------------------------------- buttons and links */
+
+.pf-v5-c-button {
+  --pf-v5-c-button--BorderRadius: calc(var(--bpc-radius) * 0.8);
+  font-family: var(--bpc-font);
+  font-weight: 500;
+  transition: background-color 150ms cubic-bezier(0.23, 1, 0.32, 1), scale 150ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.pf-v5-c-button.pf-m-primary {
+  --pf-v5-c-button--m-primary--BackgroundColor: var(--bpc-primary);
+  --pf-v5-c-button--m-primary--Color: var(--bpc-primary-foreground);
+  --pf-v5-c-button--m-primary--hover--BackgroundColor: var(--bpc-primary-hover);
+  --pf-v5-c-button--m-primary--hover--Color: var(--bpc-primary-foreground);
+  --pf-v5-c-button--m-primary--focus--BackgroundColor: var(--bpc-primary-hover);
+  --pf-v5-c-button--m-primary--focus--Color: var(--bpc-primary-foreground);
+  --pf-v5-c-button--m-primary--active--BackgroundColor: var(--bpc-primary-hover);
+  --pf-v5-c-button--m-primary--active--Color: var(--bpc-primary-foreground);
+}
+
+.pf-v5-c-button.pf-m-primary:active {
+  scale: 0.97;
+}
+
+.pf-v5-c-button.pf-m-secondary {
+  --pf-v5-c-button--m-secondary--Color: var(--bpc-foreground);
+  --pf-v5-c-button--m-secondary--BackgroundColor: var(--bpc-card);
+  --pf-v5-c-button--m-secondary--after--BorderColor: var(--bpc-border);
+  --pf-v5-c-button--m-secondary--hover--Color: var(--bpc-foreground);
+  --pf-v5-c-button--m-secondary--hover--BackgroundColor: var(--bpc-accent);
+  --pf-v5-c-button--m-secondary--hover--after--BorderColor: var(--bpc-border);
+  --pf-v5-c-button--m-secondary--focus--Color: var(--bpc-foreground);
+  --pf-v5-c-button--m-secondary--focus--after--BorderColor: var(--bpc-ring);
+}
+
+.pf-v5-c-button:focus-visible {
+  outline: 2px solid color-mix(in oklch, var(--bpc-ring) 70%, transparent);
+  outline-offset: 2px;
+}
+
+.pf-v5-c-login a,
+.pf-v5-c-login__main a {
+  color: var(--bpc-foreground);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, var(--bpc-foreground) 30%, transparent);
+  text-underline-offset: 3px;
+}
+
+.pf-v5-c-login a:hover,
+.pf-v5-c-login__main a:hover {
+  text-decoration-color: var(--bpc-foreground);
+}
+
+/* "Forgot Password?" quieter, like a hint */
+#kc-form-options a,
+.pf-v5-c-form__helper-text a {
+  color: var(--bpc-muted-foreground);
+  font-size: 0.875rem;
+}
+
+/* ---------------------------------------------------------------- messages */
+
+.pf-v5-c-alert {
+  --pf-v5-c-alert--BackgroundColor: var(--bpc-card);
+  border: 1px solid var(--bpc-border);
+  border-radius: var(--bpc-radius);
+  box-shadow: none;
+}
+
+.pf-v5-c-alert.pf-m-danger,
+.pf-v5-c-alert.pf-m-error {
+  border-color: color-mix(in oklch, var(--bpc-destructive) 40%, transparent);
+}
+
+.pf-v5-c-alert__title,
+.kc-feedback-text,
+.pf-v5-c-helper-text__item.pf-m-error {
+  font-family: var(--bpc-font);
+}
+
+.pf-v5-c-helper-text__item-text,
+.pf-v5-c-form__helper-text {
+  color: var(--bpc-muted-foreground);
+  font-size: 0.8125rem;
+}
+
+.pf-v5-c-helper-text__item.pf-m-error .pf-v5-c-helper-text__item-text,
+.kc-feedback-text.pf-m-error,
+#input-error,
+#input-error-username,
+#input-error-password {
+  color: var(--bpc-destructive);
+}
+
+/* ---------------------------------------------------------------- small screens */
+
+@media (max-width: 30rem) {
+  .pf-v5-c-login__container {
+    padding-inline: 1rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pf-v5-c-button {
+    transition: none;
+  }
+
+  .pf-v5-c-button.pf-m-primary:active {
+    scale: 1;
+  }
+}

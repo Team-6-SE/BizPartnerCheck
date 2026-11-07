@@ -1,12 +1,17 @@
+import time
 from collections.abc import Iterator
+from typing import Any
 
+import jwt
 import pytest
+from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 from sqlalchemy import delete, inspect
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.adapters.vies import CheckStatus, ViesResult, get_vies_adapter
+from app.auth import TokenVerifier, get_token_verifier
 from app.db.models import CheckResult, Partner
 from app.db.session import engine, get_db
 from app.main import app
@@ -31,6 +36,73 @@ class FakeVies:
     def check(self, vat_number: str) -> ViesResult:
         self.checked.append(vat_number)
         return self.result
+
+
+TEST_ISSUER = "http://keycloak.test/realms/bizpartnercheck"
+TEST_AUDIENCE = "bizpartnercheck-api"
+TEST_KEY_ID = "test-key"
+
+
+class TokenFactory:
+    """Signs access tokens like Keycloak does, with a key that exists only in the tests.
+
+    The API checks them with the real TokenVerifier, so tests go through the same
+    code as production; only the public key comes from here instead of Keycloak.
+    """
+
+    def __init__(self) -> None:
+        self.private_key = rsa.generate_private_key(
+            public_exponent=65537, key_size=2048
+        )
+
+    def make(
+        self,
+        *,
+        sub: str = "user-1",
+        email: str | None = "anna@example.com",
+        name: str | None = "Anna Muster",
+        expires_in: int = 300,
+        issuer: str = TEST_ISSUER,
+        audience: str | list[str] = TEST_AUDIENCE,
+        typ: str = "Bearer",
+        key: Any = None,
+        kid: str = TEST_KEY_ID,
+        algorithm: str = "RS256",
+        omit: tuple[str, ...] = (),
+        extra: dict[str, Any] | None = None,
+    ) -> str:
+        now = int(time.time())
+        claims: dict[str, Any] = {
+            "iss": issuer,
+            "aud": audience,
+            "sub": sub,
+            "typ": typ,
+            "iat": now,
+            "exp": now + expires_in,
+            "email": email,
+            "name": name,
+        }
+        claims.update(extra or {})
+        for claim in omit:
+            claims.pop(claim, None)
+        return jwt.encode(
+            claims, key or self.private_key, algorithm=algorithm, headers={"kid": kid}
+        )
+
+    def verifier(self) -> TokenVerifier:
+        public_key = self.private_key.public_key()
+
+        def resolve(token: str) -> Any:
+            if jwt.get_unverified_header(token).get("kid") != TEST_KEY_ID:
+                raise jwt.PyJWKClientError("Unable to find a signing key")
+            return public_key
+
+        return TokenVerifier(TEST_ISSUER, TEST_AUDIENCE, resolve)
+
+
+@pytest.fixture(scope="session")
+def tokens() -> TokenFactory:
+    return TokenFactory()
 
 
 @pytest.fixture(scope="session")
@@ -82,12 +154,23 @@ def fake_vies() -> FakeVies:
 
 
 @pytest.fixture
-def client(db: Session, fake_vies: FakeVies) -> Iterator[TestClient]:
+def anonymous_client(
+    db: Session, fake_vies: FakeVies, tokens: TokenFactory
+) -> Iterator[TestClient]:
+    """A client without sign-in token."""
     app.dependency_overrides[get_db] = lambda: db
-    # Tests never call the real VIES.
+    # Tests never call the real VIES or the real Keycloak.
     app.dependency_overrides[get_vies_adapter] = lambda: fake_vies
+    app.dependency_overrides[get_token_verifier] = tokens.verifier
     try:
         with TestClient(app) as test_client:
             yield test_client
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def client(anonymous_client: TestClient, tokens: TokenFactory) -> TestClient:
+    """A client of a signed-in user (valid token on every request)."""
+    anonymous_client.headers["Authorization"] = f"Bearer {tokens.make()}"
+    return anonymous_client

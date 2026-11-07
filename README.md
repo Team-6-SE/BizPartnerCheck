@@ -46,7 +46,7 @@ Run once, from the project folder:
 
 ```powershell
 Copy-Item .env.example .env                       # create your local settings file (never commit .env)
-docker compose -f infra/docker-compose.yml up -d  # start PostgreSQL 17 in Docker
+docker compose -f infra/docker-compose.yml up -d  # start PostgreSQL 17, Keycloak (sign-in) and Mailpit (test e-mails) in Docker
 cd backend
 uv sync                                           # install Python packages
 uv run alembic upgrade head                       # create/update all tables in the database
@@ -54,7 +54,7 @@ uv run alembic upgrade head                       # create/update all tables in 
 
 - **After `git pull`**: run `uv run alembic upgrade head` again (in `backend`), in case someone added a new migration.
 - **After changing `app/db/models.py`**: create a migration with `uv run alembic revision --autogenerate -m "what changed"`, then `uv run alembic upgrade head`, and commit the new file in `app/db/migrations/versions/`.
-- **Stop the database**: `docker compose -f infra/docker-compose.yml down`
+- **Stop the database**: `docker compose -f infra/docker-compose.yml down` (stops Keycloak and Mailpit too)
 
 ---
 ## Run the backend (API)
@@ -67,6 +67,7 @@ uv run uvicorn app.main:app --reload   # starts the API on http://localhost:8000
 
 - Health check: http://localhost:8000/health → `{"status": "ok"}`
 - Interactive API docs: http://localhost:8000/docs
+- Everything under `/api/v1` needs a sign-in token (otherwise `401`). Use the web app, or see [docs/authentication.md](docs/authentication.md) for calling the API by hand.
 - Run the tests: `uv run pytest` (in `backend`, database must be running). The tests never call the real VIES service.
 - The **Check** button (VIES) needs internet: it asks the EU VIES service. Details: [docs/vies.md](docs/vies.md)
 
@@ -88,6 +89,30 @@ npm run dev        # opens on http://localhost:5173
 ```
 
 The web app calls the backend through `/api`, which the dev server forwards to http://localhost:8000.
+
+---
+## Sign in (Keycloak)
+**Requirements:** `docker compose -f infra/docker-compose.yml up -d` (see above). Keycloak needs about 30 seconds after the start.
+
+Open http://localhost:5173: you are sent to the Keycloak sign-in page. Local demo account:
+
+| E-mail | Password |
+|---|---|
+| `demo@bizpartnercheck.local` | `Demo-Password-2026` |
+
+- **Keycloak admin console** (users, sessions, settings): http://localhost:8080/admin → `admin` / `admin`
+- **E-mails** (e.g. "Forgot password?") are not sent out but caught by Mailpit: http://localhost:8025
+- The Keycloak setup comes from `infra/keycloak/import/bizpartnercheck-realm.json`, the look of the sign-in pages from `infra/keycloak/themes/bizpartnercheck`. After changing it, or to get a clean Keycloak: `docker compose -f infra/docker-compose.yml up -d --force-recreate keycloak`. Users created by hand are lost then.
+- How sign-in works and which settings exist: [docs/authentication.md](docs/authentication.md)
+
+### End-to-end tests (browser)
+**Requirements:** database, Keycloak, backend and frontend are running (see above).
+
+```powershell
+cd frontend
+npx playwright install chromium   # once: download the test browser
+npm run test:e2e                   # signs in with the demo account in a real browser
+```
 
 ---
 
