@@ -29,7 +29,7 @@ export function UsersPage() {
         <CardContent>
           <ComingSoon
             icon={UsersIcon}
-            title="User Management Comes With Sign-In"
+            title="User Management Is Coming Soon"
             description="Users sign in through Keycloak. Invitations are sent by e-mail and are valid for 7 days."
           />
         </CardContent>

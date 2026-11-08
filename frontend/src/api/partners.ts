@@ -1,3 +1,5 @@
+import { getAccessToken, renewAccessToken, signIn, signedInMomentsAgo } from '@/auth/oidc'
+
 export type CheckStatus = 'VALID' | 'INVALID' | 'ERROR'
 
 export type CheckResult = {
@@ -35,12 +37,55 @@ const TIMEOUT_MS = 15_000
 // The backend waits up to 30 s for VIES (3 tries of 8 s), so wait a bit longer here.
 const CHECK_TIMEOUT_MS = 40_000
 
+const SESSION_ENDED = 'Your session has ended. Please sign in again.'
+// Shown instead of sending the user to Keycloak again and again (see docs/authentication.md).
+const SIGN_IN_NOT_ACCEPTED = 'The server does not accept your sign-in right now. Please try again in a moment.'
+
 async function request<T>(path: string, init?: RequestInit, timeoutMs = TIMEOUT_MS): Promise<T> {
-  let response: Response
+  const token = await getAccessToken()
+  let response = await send(path, init, timeoutMs, token)
+
+  if (response.status === 401 && token) {
+    // The token may have expired a moment ago: renew it once and try again.
+    const renewed = await renewAccessToken()
+    if (renewed) {
+      response = await send(path, init, timeoutMs, renewed)
+      if (response.status === 401) {
+        // A brand-new token is refused: signing in again would not help.
+        const error = await toApiError(response)
+        throw new ApiError(SIGN_IN_NOT_ACCEPTED, 401, error.code)
+      }
+    }
+  }
+  if (response.status === 401) {
+    const error = await toApiError(response)
+    if (signedInMomentsAgo()) throw new ApiError(SIGN_IN_NOT_ACCEPTED, 401, error.code)
+    signIn().catch(() => {
+      // Keycloak not reachable: the message below is all the user can get.
+    })
+    throw new ApiError(SESSION_ENDED, 401, error.code)
+  }
+
+  if (!response.ok) {
+    throw await toApiError(response)
+  }
+  return (await response.json()) as T
+}
+
+async function send(
+  path: string,
+  init: RequestInit | undefined,
+  timeoutMs: number,
+  token: string | null,
+): Promise<Response> {
   try {
-    response = await fetch(`/api/v1${path}`, {
+    return await fetch(`/api/v1${path}`, {
       ...init,
-      headers: { 'Content-Type': 'application/json', ...init?.headers },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...init?.headers,
+      },
       // Never spin forever.
       signal: init?.signal ?? AbortSignal.timeout(timeoutMs),
     })
@@ -50,11 +95,6 @@ async function request<T>(path: string, init?: RequestInit, timeoutMs = TIMEOUT_
     }
     throw new ApiError(SERVER_UNAVAILABLE, 0)
   }
-
-  if (!response.ok) {
-    throw await toApiError(response)
-  }
-  return (await response.json()) as T
 }
 
 async function toApiError(response: Response): Promise<ApiError> {

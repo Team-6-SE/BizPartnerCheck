@@ -1,5 +1,8 @@
-import { ChevronsUpDownIcon, LanguagesIcon, LogInIcon } from 'lucide-react'
+import { ChevronsUpDownIcon, KeyRoundIcon, LanguagesIcon, LogOutIcon } from 'lucide-react'
+import { useAuth } from 'react-oidc-context'
 import { Link, useLocation } from 'react-router'
+
+import { ACCOUNT_URL, announceSignOut, signedOutPath } from '@/auth/oidc'
 
 import { findNavItem, navigation } from '@/app/navigation'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -27,7 +30,16 @@ import {
   SidebarRail,
 } from '@/components/ui/sidebar'
 
+function initials(name: string): string {
+  const parts = name.split(/[\s@.]+/).filter(Boolean)
+  return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase() || '?'
+}
+
 export function AppSidebar() {
+  const auth = useAuth()
+  const profile = auth.user?.profile
+  const email = profile?.email ?? ''
+  const name = profile?.name || [profile?.given_name, profile?.family_name].filter(Boolean).join(' ') || email
   const { pathname } = useLocation()
   // Same rule as the breadcrumb, so e.g. a check result keeps "History" active.
   const activeUrl = findNavItem(pathname)?.item.url
@@ -88,20 +100,34 @@ export function AppSidebar() {
                 }
               >
                 <Avatar className="size-8 rounded-lg">
-                  <AvatarFallback className="rounded-lg">TU</AvatarFallback>
+                  <AvatarFallback className="rounded-lg">{initials(name)}</AvatarFallback>
                 </Avatar>
                 <span className="flex min-w-0 flex-1 flex-col leading-tight">
-                  <span className="truncate font-medium">Test User</span>
-                  <span className="truncate text-xs text-muted-foreground">Not signed in</span>
+                  <span className="truncate font-medium">{name}</span>
+                  <span className="truncate text-xs text-muted-foreground">{email}</span>
                 </span>
                 <ChevronsUpDownIcon className="ml-auto" />
               </DropdownMenuTrigger>
               <DropdownMenuContent side="top" align="start" className="min-w-56">
                 <DropdownMenuGroup>
-                  <DropdownMenuLabel>Sign-in comes with Keycloak</DropdownMenuLabel>
-                  <DropdownMenuItem render={<Link to="/sign-in" />}>
-                    <LogInIcon />
-                    Sign In
+                  <DropdownMenuLabel className="truncate">{email}</DropdownMenuLabel>
+                  <DropdownMenuItem
+                    render={<a href={ACCOUNT_URL} target="_blank" rel="noopener noreferrer" />}
+                  >
+                    <KeyRoundIcon />
+                    Account and Password
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      announceSignOut('signed_out')
+                      auth.signoutRedirect().catch(() => {
+                        // Keycloak not reachable: at least leave the app in this browser.
+                        window.location.replace(signedOutPath('signed_out'))
+                      })
+                    }}
+                  >
+                    <LogOutIcon />
+                    Sign Out
                   </DropdownMenuItem>
                 </DropdownMenuGroup>
                 <DropdownMenuSeparator />

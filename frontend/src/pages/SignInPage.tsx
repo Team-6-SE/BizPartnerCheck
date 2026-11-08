@@ -1,36 +1,54 @@
-import { ArrowLeftIcon, LogInIcon } from 'lucide-react'
-import { Link } from 'react-router'
+import { useState } from 'react'
+import { ArrowRightIcon, LogInIcon } from 'lucide-react'
+import { useAuth } from 'react-oidc-context'
+import { Link, useSearchParams } from 'react-router'
 
-import { Badge } from '@/components/ui/badge'
+import { IDLE_TIMEOUT_MINUTES, signIn } from '@/auth/oidc'
+import { FullPageMessage } from '@/components/full-page-message'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 
+/** Public page: after signing out, after inactivity, or when opened directly. */
 export function SignInPage() {
+  const auth = useAuth()
+  const [params] = useSearchParams()
+  const [unreachable, setUnreachable] = useState(false)
+
+  if (auth.isAuthenticated) {
+    return (
+      <FullPageMessage title="You Are Signed In" description={auth.user?.profile.email}>
+        <Button className="w-full" nativeButton={false} render={<Link to="/" />}>
+          Go to the App
+          <ArrowRightIcon data-icon="inline-end" />
+        </Button>
+      </FullPageMessage>
+    )
+  }
+
+  const description =
+    params.get('reason') === 'idle'
+      ? `You were signed out after ${IDLE_TIMEOUT_MINUTES} minutes without activity.`
+      : params.has('signed_out')
+        ? 'You are signed out.'
+        : 'Sign in with the e-mail address and password of your BizPartnerCheck account.'
+
   return (
-    <main className="flex min-h-svh items-center justify-center bg-muted/40 p-4">
-      <title>Sign In · BizPartnerCheck</title>
-      <Card className="w-full max-w-sm">
-        <CardHeader className="justify-items-center text-center">
-          <img src="/favicon.svg" alt="" width={40} height={40} className="mb-2 size-10" />
-          <CardTitle>
-            <h1 className="font-heading text-xl font-semibold">Sign In to BizPartnerCheck</h1>
-          </CardTitle>
-          <CardDescription>You will be sent to the sign-in page of your organization.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col items-center gap-3">
-          <Button className="w-full" disabled>
-            <LogInIcon data-icon="inline-start" />
-            Continue
-          </Button>
-          <Badge variant="secondary">Coming Soon</Badge>
-        </CardContent>
-        <CardFooter className="justify-center">
-          <Button variant="link" size="sm" nativeButton={false} render={<Link to="/" />}>
-            <ArrowLeftIcon data-icon="inline-start" />
-            Back to the App
-          </Button>
-        </CardFooter>
-      </Card>
-    </main>
+    <FullPageMessage title="Sign In to BizPartnerCheck" description={description}>
+      <Button
+        className="w-full"
+        onClick={() => {
+          setUnreachable(false)
+          signIn('/').catch(() => setUnreachable(true))
+        }}
+        disabled={Boolean(auth.activeNavigator)}
+      >
+        <LogInIcon data-icon="inline-start" />
+        Sign In
+      </Button>
+      {unreachable && (
+        <p role="alert" className="text-center text-sm text-destructive">
+          The sign-in service cannot be reached right now. Please try again in a moment.
+        </p>
+      )}
+    </FullPageMessage>
   )
 }

@@ -1,14 +1,50 @@
-from fastapi import FastAPI, Request
+from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import OperationalError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.auth import AuthenticatedUser, get_current_user
 from app.errors import error_body
 from app.partners.router import router as partners_router
 
 app = FastAPI(title="BizPartnerCheck API", version="0.1.0")
 
 REQUEST_PARTS = {"body", "path", "query", "header", "cookie"}
+API_PREFIX = "/api/v1"
+
+
+@app.middleware("http")
+async def require_bearer_token(request: Request, call_next):
+    """No token, no API: 401 before routing, so unknown paths, wrong methods and broken
+    request bodies reveal nothing to callers who are not signed in.
+    The token itself is checked by get_current_user on every route."""
+    path = request.url.path
+    if (
+        path == API_PREFIX or path.startswith(API_PREFIX + "/")
+    ) and request.method != "OPTIONS":
+        scheme, _, token = request.headers.get("authorization", "").partition(" ")
+        if scheme.lower() != "bearer" or not token.strip():
+            return JSONResponse(
+                status_code=401,
+                content=error_body("not_authenticated", "Please sign in."),
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+    return await call_next(request)
+
+
+@app.exception_handler(StarletteHTTPException)
+def http_error(_request: Request, exc: StarletteHTTPException) -> JSONResponse:
+    """404, 405 and our own errors all use the uniform error format."""
+    if isinstance(exc.detail, dict):
+        content = {"detail": exc.detail}
+    else:
+        codes = {404: "not_found", 405: "method_not_allowed"}
+        code = codes.get(exc.status_code, f"http_{exc.status_code}")
+        content = error_body(code, str(exc.detail))
+    return JSONResponse(
+        status_code=exc.status_code, content=content, headers=exc.headers
+    )
 
 
 @app.exception_handler(RequestValidationError)
@@ -42,7 +78,19 @@ def database_unavailable(_request: Request, _exc: OperationalError) -> JSONRespo
     )
 
 
-app.include_router(partners_router, prefix="/api/v1")
+# Everything under /api/v1 needs a valid sign-in token (secure by default:
+# new routers added here are protected automatically).
+api = APIRouter(prefix="/api/v1", dependencies=[Depends(get_current_user)])
+api.include_router(partners_router)
+
+
+@api.get("/me", tags=["account"])
+def me(user: AuthenticatedUser) -> dict[str, str | None]:
+    """The signed-in user, as seen by the API."""
+    return {"id": user.id, "email": user.email, "name": user.name}
+
+
+app.include_router(api)
 
 
 @app.get("/health", tags=["system"])

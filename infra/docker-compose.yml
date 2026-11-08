@@ -14,5 +14,35 @@ services:
       interval: 5s
       retries: 10
 
+  # Sign-in, passwords and sessions (local development setup, see docs/authentication.md).
+  # The realm is imported from ./keycloak/import on every start of a new container, so the JSON
+  # file is the single source of truth. Users created by hand are lost after `docker compose down`.
+  # ./keycloak/themes: BizPartnerCheck look of the sign-in pages (CSS changes show after a reload).
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.2
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      # Tokens always name http://localhost:8080 as issuer, also when the API calls Keycloak
+      # from inside Docker later.
+      KC_HOSTNAME: http://localhost:8080
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./keycloak/import:/opt/keycloak/data/import:ro
+      - ./keycloak/themes/bizpartnercheck:/opt/keycloak/themes/bizpartnercheck:ro
+    depends_on:
+      - mailpit
+
+  # Catches all e-mails (e.g. password reset) locally: open http://localhost:8025
+  mailpit:
+    image: axllent/mailpit:v1.32.0
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+
 volumes:
   db_data:

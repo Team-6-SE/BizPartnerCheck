@@ -1,0 +1,102 @@
+{
+  "realm": "bizpartnercheck",
+  "displayName": "BizPartnerCheck",
+  "enabled": true,
+  "sslRequired": "external",
+  "loginTheme": "bizpartnercheck",
+
+  "registrationAllowed": false,
+  "registrationEmailAsUsername": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "rememberMe": false,
+  "verifyEmail": false,
+  "editUsernameAllowed": false,
+
+  "passwordPolicy": "length(12) and maxLength(128) and notUsername(undefined) and notEmail(undefined) and passwordHistory(3)",
+
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "failureFactor": 5,
+  "waitIncrementSeconds": 300,
+  "maxFailureWaitSeconds": 900,
+  "minimumQuickLoginWaitSeconds": 60,
+  "quickLoginCheckMilliSeconds": 1000,
+  "maxDeltaTimeSeconds": 43200,
+
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "actionTokenGeneratedByUserLifespan": 1800,
+
+  "internationalizationEnabled": true,
+  "supportedLocales": ["en", "de"],
+  "defaultLocale": "en",
+
+  "smtpServer": {
+    "host": "mailpit",
+    "port": "1025",
+    "from": "no-reply@bizpartnercheck.local",
+    "fromDisplayName": "BizPartnerCheck",
+    "auth": "false",
+    "ssl": "false",
+    "starttls": "false"
+  },
+
+  "clients": [
+    {
+      "clientId": "bizpartnercheck-web",
+      "name": "BizPartnerCheck web app",
+      "description": "React web app. Public client: authorization code flow with PKCE.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "frontchannelLogout": true,
+      "rootUrl": "http://localhost:5173",
+      "baseUrl": "/",
+      "redirectUris": ["http://localhost:5173/*"],
+      "webOrigins": ["http://localhost:5173"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:5173/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "bizpartnercheck-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+
+  "users": [
+    {
+      "username": "demo@bizpartnercheck.local",
+      "email": "demo@bizpartnercheck.local",
+      "emailVerified": true,
+      "firstName": "Demo",
+      "lastName": "User",
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Demo-Password-2026",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}
