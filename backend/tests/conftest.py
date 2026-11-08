@@ -1,3 +1,4 @@
+import os
 import time
 from collections.abc import Iterator
 from typing import Any
@@ -6,15 +7,20 @@ import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
-from sqlalchemy import delete, inspect
+from sqlalchemy import delete, inspect, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.adapters.vies import CheckStatus, ViesResult, get_vies_adapter
 from app.auth import TokenVerifier, get_token_verifier
-from app.db.models import CheckResult, Partner
+from app.db.models import CheckResult, Partner, SecurityEvent
 from app.db.session import engine, get_db
+
+# No background copying of Keycloak events while testing (app/security/background.py).
+os.environ["SECURITY_EVENTS_SYNC_SECONDS"] = "0"
+
 from app.main import app
+from app.security.keycloak import get_keycloak_client
 
 VALID_ANSWER = {
     "isValid": True,
@@ -116,7 +122,7 @@ def database_ready() -> None:
             "`docker compose -f infra/docker-compose.yml up -d`.",
             returncode=1,
         )
-    if not {"partners", "check_results"} <= set(tables):
+    if not {"partners", "check_results", "security_events"} <= set(tables):
         pytest.exit(
             "The database tables are missing. Run `uv run alembic upgrade head` in `backend`.",
             returncode=1,
@@ -128,7 +134,8 @@ def db(database_ready: None) -> Iterator[Session]:
     """A session inside a transaction that is rolled back after the test.
 
     Tests use the real database (tables from `alembic upgrade head`),
-    but leave no data behind. Each test starts without partners and checks;
+    but leave no data behind. Each test starts without partners, checks and
+    security log entries;
     your own data comes back when the transaction is rolled back.
     """
     connection = engine.connect()
@@ -140,6 +147,14 @@ def db(database_ready: None) -> Iterator[Session]:
     )
     session.execute(delete(CheckResult))
     session.execute(delete(Partner))
+    # The security log is append-only; this transaction may empty it (it is rolled back).
+    session.execute(
+        text("SET LOCAL bizpartnercheck.allow_security_event_delete = 'on'")
+    )
+    session.execute(delete(SecurityEvent))
+    session.execute(
+        text("SET LOCAL bizpartnercheck.allow_security_event_delete = 'off'")
+    )
     try:
         yield session
     finally:
@@ -162,6 +177,7 @@ def anonymous_client(
     # Tests never call the real VIES or the real Keycloak.
     app.dependency_overrides[get_vies_adapter] = lambda: fake_vies
     app.dependency_overrides[get_token_verifier] = tokens.verifier
+    app.dependency_overrides[get_keycloak_client] = lambda: None
     try:
         with TestClient(app) as test_client:
             yield test_client
@@ -174,3 +190,16 @@ def client(anonymous_client: TestClient, tokens: TokenFactory) -> TestClient:
     """A client of a signed-in user (valid token on every request)."""
     anonymous_client.headers["Authorization"] = f"Bearer {tokens.make()}"
     return anonymous_client
+
+
+@pytest.fixture
+def admin_token(tokens: TokenFactory) -> str:
+    """Token of an organisation admin (realm role "org-admin")."""
+    return tokens.make(
+        sub="admin-1",
+        email="admin@example.com",
+        name="Anna Admin",
+        extra={
+            "realm_access": {"roles": ["org-admin", "default-roles-bizpartnercheck"]}
+        },
+    )

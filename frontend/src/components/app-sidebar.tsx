@@ -4,7 +4,8 @@ import { Link, useLocation } from 'react-router'
 
 import { ACCOUNT_URL, announceSignOut, signedOutPath } from '@/auth/oidc'
 
-import { findNavItem, navigation } from '@/app/navigation'
+import { findNavItem, visibleNavigation } from '@/app/navigation'
+import { useRoles } from '@/auth/roles'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   DropdownMenu,
@@ -43,6 +44,8 @@ export function AppSidebar() {
   const { pathname } = useLocation()
   // Same rule as the breadcrumb, so e.g. a check result keeps "History" active.
   const activeUrl = findNavItem(pathname)?.item.url
+  const roles = useRoles()
+  const navigation = visibleNavigation(roles)
 
   return (
     <Sidebar collapsible="icon">

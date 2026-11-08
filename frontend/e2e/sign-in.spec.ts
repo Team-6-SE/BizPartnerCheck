@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 
-// Demo user from infra/keycloak/bizpartnercheck-realm.json (local development only).
+// Demo user from infra/keycloak/import/bizpartnercheck-realm.json (local development only).
 const EMAIL = process.env.E2E_USER ?? 'demo@bizpartnercheck.local'
 const PASSWORD = process.env.E2E_PASSWORD ?? 'Demo-Password-2026'
 const KEYCLOAK = /localhost:8080\/realms\/bizpartnercheck\/protocol\/openid-connect\/auth/
@@ -62,4 +62,16 @@ test('sign out ends the session in the app and in Keycloak', async ({ page }) =>
   await page.goto('/partners')
   await expect(page).toHaveURL(KEYCLOAK)
   await expect(page.locator('#password')).toBeVisible()
+})
+
+test('the account page (password, authenticator app) opens for a signed-in user', async ({ page }) => {
+  await page.goto('/')
+  await submitCredentials(page, EMAIL, PASSWORD)
+  await expect(page).toHaveURL('/')
+
+  // Same Keycloak session: no second sign-in. Users imported from the realm file need the
+  // default roles (view-profile, manage-account), otherwise this page shows "Something went wrong".
+  await page.goto('http://localhost:8080/realms/bizpartnercheck/account/account-security/signing-in')
+  await expect(page.getByRole('heading', { name: 'Signing in' })).toBeVisible()
+  await expect(page.getByText('Something went wrong')).toHaveCount(0)
 })

@@ -99,11 +99,17 @@ Open http://localhost:5173: you are sent to the Keycloak sign-in page. Local dem
 | E-mail | Password |
 |---|---|
 | `demo@bizpartnercheck.local` | `Demo-Password-2026` |
+| `admin@bizpartnercheck.local` | `Admin-Password-2026` (organisation admin) |
+
+The admin has to set up an authenticator app (e.g. Microsoft or Google Authenticator) at the first sign-in and
+enters a one-time code every time after that. Admins see **Organization → Security Log**. If the admin's phone is
+lost: admin console → Users → `admin@bizpartnercheck.local` → Credentials → delete "OTP".
 
 - **Keycloak admin console** (users, sessions, settings): http://localhost:8080/admin → `admin` / `admin`
 - **E-mails** (e.g. "Forgot password?") are not sent out but caught by Mailpit: http://localhost:8025
 - The Keycloak setup comes from `infra/keycloak/import/bizpartnercheck-realm.json`, the look of the sign-in pages from `infra/keycloak/themes/bizpartnercheck`. After changing it, or to get a clean Keycloak: `docker compose -f infra/docker-compose.yml up -d --force-recreate keycloak`. Users created by hand are lost then.
 - How sign-in works and which settings exist: [docs/authentication.md](docs/authentication.md)
+- Second factor, roles and the security log: [docs/security-log.md](docs/security-log.md)
 
 ### End-to-end tests (browser)
 **Requirements:** database, Keycloak, backend and frontend are running (see above).
@@ -111,8 +117,11 @@ Open http://localhost:5173: you are sent to the Keycloak sign-in page. Local dem
 ```powershell
 cd frontend
 npx playwright install chromium   # once: download the test browser
-npm run test:e2e                   # signs in with the demo account in a real browser
+npm run test:e2e                   # signs in with the demo accounts in a real browser
 ```
+
+The security log test removes the demo admin's authenticator app first (through Keycloak's admin API with
+`admin` / `admin`), sets up a new one and waits for a fresh one-time code, so it takes about 40 seconds.
 
 ---
 

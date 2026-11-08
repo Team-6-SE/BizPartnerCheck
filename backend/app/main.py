@@ -7,8 +7,12 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.auth import AuthenticatedUser, get_current_user
 from app.errors import error_body
 from app.partners.router import router as partners_router
+from app.security.background import security_event_sync
+from app.security.router import router as security_router
 
-app = FastAPI(title="BizPartnerCheck API", version="0.1.0")
+app = FastAPI(
+    title="BizPartnerCheck API", version="0.1.0", lifespan=security_event_sync
+)
 
 REQUEST_PARTS = {"body", "path", "query", "header", "cookie"}
 API_PREFIX = "/api/v1"
@@ -82,12 +86,18 @@ def database_unavailable(_request: Request, _exc: OperationalError) -> JSONRespo
 # new routers added here are protected automatically).
 api = APIRouter(prefix="/api/v1", dependencies=[Depends(get_current_user)])
 api.include_router(partners_router)
+api.include_router(security_router)
 
 
 @api.get("/me", tags=["account"])
-def me(user: AuthenticatedUser) -> dict[str, str | None]:
-    """The signed-in user, as seen by the API."""
-    return {"id": user.id, "email": user.email, "name": user.name}
+def me(user: AuthenticatedUser) -> dict[str, str | None | list[str]]:
+    """The signed-in user, as seen by the API (roles decide which pages the app shows)."""
+    return {
+        "id": user.id,
+        "email": user.email,
+        "name": user.name,
+        "roles": sorted(user.roles),
+    }
 
 
 app.include_router(api)
