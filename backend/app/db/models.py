@@ -37,14 +37,32 @@ class Partner(Base):
         UniqueConstraint(
             "organization_id", "vat_number", name="uq_partners_organization_vat"
         ),
+        # The same company register number, too. Several partners without one are fine
+        # (NULLs are never equal in a unique constraint).
+        UniqueConstraint(
+            "organization_id",
+            "company_register_number",
+            name="uq_partners_organization_register",
+        ),
+        # A partner needs at least one identifier.
+        CheckConstraint(
+            "vat_number IS NOT NULL OR company_register_number IS NOT NULL",
+            name="ck_partners_identifier",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     organization_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("organizations.id"), nullable=False, index=True
     )
-    # Stored normalised: upper case, no spaces, e.g. "ATU12345678".
-    vat_number: Mapped[str] = mapped_column(String(20), nullable=False)
+    # Stored normalised: upper case, no spaces, e.g. "ATU12345678". Empty if the partner
+    # was added by company register number only.
+    vat_number: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Austrian company register number (Firmenbuchnummer), stored normalised: digits
+    # without leading zeros + lower-case letter, e.g. "123456a" (app/partners/register.py).
+    company_register_number: Mapped[str | None] = mapped_column(
+        String(10), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
