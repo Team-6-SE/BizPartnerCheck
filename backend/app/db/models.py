@@ -61,7 +61,7 @@ class CheckResult(Base):
     __tablename__ = "check_results"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('OK', 'FINDING', 'REVIEW', 'ERROR')",
+            "status IN ('OK', 'FINDING', 'REVIEW', 'NOT_APPLICABLE', 'ERROR')",
             name="ck_check_results_status",
         ),
         # Fast lookup of the latest result per partner.
@@ -73,7 +73,7 @@ class CheckResult(Base):
         ForeignKey("partners.id"), nullable=False
     )
     source: Mapped[str] = mapped_column(String(20), nullable=False)
-    status: Mapped[str] = mapped_column(String(10), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
     # Set by the app (not now() in the database), so two checks in one
     # transaction still get different times.
     checked_at: Mapped[datetime] = mapped_column(

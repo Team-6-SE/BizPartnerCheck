@@ -13,6 +13,7 @@ same way for every source. Anything unclear is ERROR, never OK.
 Details: docs/source-adapters.md
 """
 
+import logging
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
@@ -25,10 +26,19 @@ import httpx2 as httpx
 
 from app.adapters.limits import Attempt, Limits, run_with_limits
 
+logger = logging.getLogger(__name__)
+
 # Our own error codes for problems before the source gave a usable answer.
 NO_ANSWER_IN_TIME = "NO_ANSWER_IN_TIME"
 NOT_REACHABLE = "NOT_REACHABLE"
 BAD_RESPONSE = "BAD_RESPONSE"
+# The adapter itself failed (a bug or an answer it did not expect).
+ADAPTER_FAILED = "ADAPTER_FAILED"
+
+FALLBACK_EXPLANATION = (
+    "The source could not be checked. The result was not confirmed. "
+    "Please try again later."
+)
 
 
 class CheckStatus(StrEnum):
@@ -40,6 +50,8 @@ class CheckStatus(StrEnum):
     FINDING = "FINDING"
     # Something may be wrong and a person must look (e.g. same name, other number).
     REVIEW = "REVIEW"
+    # The source does not cover this partner (e.g. Firmenbuch for a foreign company).
+    NOT_APPLICABLE = "NOT_APPLICABLE"
     # The source could not be asked or gave no clear answer. Never counts as OK.
     ERROR = "ERROR"
 
@@ -147,11 +159,25 @@ class SourceAdapter(ABC):
         return SourceResult(
             source=self.source,
             status=status,
-            explanation=self.describe(status, raw),
+            explanation=self._explain(status, raw),
             retrieved_at=self._now(),
-            data_as_of=self.data_as_of(raw),
+            data_as_of=self._data_as_of(raw),
             raw=raw,
         )
+
+    def _explain(self, status: CheckStatus, raw: dict[str, Any]) -> str:
+        try:
+            return self.describe(status, raw)
+        except Exception:
+            logger.exception("%s adapter: describe() failed", self.source)
+            return FALLBACK_EXPLANATION
+
+    def _data_as_of(self, raw: dict[str, Any]) -> datetime | None:
+        try:
+            return self.data_as_of(raw)
+        except Exception:
+            logger.exception("%s adapter: data_as_of() failed", self.source)
+            return None
 
     def _attempt(
         self, subject: CheckSubject, timeout: float
@@ -167,10 +193,30 @@ class SourceAdapter(ABC):
         except httpx.HTTPError as exc:
             raw = {"error": NOT_REACHABLE, "message": type(exc).__name__}
             return Attempt((raw, CheckStatus.ERROR), try_again=True)
+        except Exception as exc:
+            return self._failed("query", exc, answer=None)
 
         if not isinstance(raw, dict):
             raw = {"error": BAD_RESPONSE, "message": repr(raw)[:500]}
             return Attempt((raw, CheckStatus.ERROR), try_again=False)
 
-        interpretation = self.interpret(raw)
+        try:
+            interpretation = self.interpret(raw)
+        except Exception as exc:
+            return self._failed("interpret", exc, answer=raw)
         return Attempt((raw, interpretation.status), interpretation.try_again)
+
+    def _failed(
+        self, step: str, exc: Exception, answer: dict[str, Any] | None
+    ) -> Attempt[tuple[dict[str, Any], CheckStatus]]:
+        """Anything unclear is ERROR: an adapter bug must not break the request."""
+        logger.exception("%s adapter: %s() failed", self.source, step)
+        raw: dict[str, Any] = {
+            "error": ADAPTER_FAILED,
+            "message": f"{step}: {type(exc).__name__}",
+        }
+        if answer is not None:
+            # Keep what the source said, as evidence and for finding the bug.
+            raw["answer"] = answer
+        # A bug will not go away when asked again.
+        return Attempt((raw, CheckStatus.ERROR), try_again=False)

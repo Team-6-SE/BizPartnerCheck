@@ -11,12 +11,18 @@ Choose a fake per source with an environment variable named after the source:
     VIES_ADAPTER=fake-timeout     the source does not answer in time
     VIES_ADAPTER=fake-malformed   the source answers something we cannot read
 
-Empty or "real" uses the real source. An unknown value stops with an error, so a typo
-on staging does not silently call the real service.
+Empty or "real" uses the real source. The settings are checked when the API starts
+(`check_adapter_settings`): an unknown value stops the start with an error, so a typo
+on staging does not silently call the real service, and an active fake is logged.
+
+Fake results are marked with "fake": true in the stored raw answer, so they can never
+be mistaken for evidence from the real source.
 """
 
+import dataclasses
+import logging
 import os
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from datetime import datetime
 from typing import Any
 
@@ -28,11 +34,16 @@ from app.adapters.base import (
     Interpretation,
     Scenario,
     SourceAdapter,
+    SourceResult,
 )
 
-FAKE_PREFIX = "fake-"
+logger = logging.getLogger(__name__)
 
-MALFORMED_ANSWER: dict[str, Any] = {"fake": "an answer in an unknown format"}
+FAKE_PREFIX = "fake-"
+# Key added to the raw answer of every fake result.
+FAKE_MARKER = "fake"
+
+MALFORMED_ANSWER: dict[str, Any] = {"unexpected": "an answer in an unknown format"}
 
 
 class FakeAdapter(SourceAdapter):
@@ -44,6 +55,11 @@ class FakeAdapter(SourceAdapter):
         self.real = real
         self.scenario = scenario
         self.queried: list[CheckSubject] = []
+
+    def check(self, subject: CheckSubject) -> SourceResult:
+        result = super().check(subject)
+        # Mark every fake result (also timeouts and errors) in the stored evidence.
+        return dataclasses.replace(result, raw={**result.raw, FAKE_MARKER: True})
 
     def query(self, subject: CheckSubject, timeout: float) -> dict[str, Any]:
         self.queried.append(subject)
@@ -70,22 +86,43 @@ class UnknownAdapterSetting(ValueError):
     pass
 
 
+def adapter_setting(
+    source: str, environ: Mapping[str, str] | None = None
+) -> Scenario | None:
+    """The fake scenario chosen in {SOURCE}_ADAPTER, or None for the real source."""
+    env = os.environ if environ is None else environ
+    name = f"{source.upper()}_ADAPTER"
+    setting = env.get(name, "").strip().lower()
+    if setting in ("", "real"):
+        return None
+    if setting.startswith(FAKE_PREFIX):
+        try:
+            return Scenario(setting.removeprefix(FAKE_PREFIX))
+        except ValueError:
+            pass
+    choices = ", ".join(["real", *(FAKE_PREFIX + s.value for s in Scenario)])
+    raise UnknownAdapterSetting(f"{name}={setting!r} is not known. Use one of: {choices}.")
+
+
+def check_adapter_settings(
+    sources: Iterable[str], environ: Mapping[str, str] | None = None
+) -> None:
+    """Run once at startup: stop on unknown values, warn about every active fake."""
+    for source in sources:
+        scenario = adapter_setting(source, environ)
+        if scenario is not None:
+            logger.warning(
+                "%s: FAKE adapter active (%s_ADAPTER=fake-%s). Results are not real "
+                "and are marked \"fake\": true.",
+                source,
+                source.upper(),
+                scenario.value,
+            )
+
+
 def with_fake_from_env(
     real: SourceAdapter, environ: Mapping[str, str] | None = None
 ) -> SourceAdapter:
     """The real adapter, or its fake version when {SOURCE}_ADAPTER asks for one."""
-    env = os.environ if environ is None else environ
-    name = f"{real.source.upper()}_ADAPTER"
-    setting = env.get(name, "").strip().lower()
-    if setting in ("", "real"):
-        return real
-    if setting.startswith(FAKE_PREFIX):
-        try:
-            scenario = Scenario(setting.removeprefix(FAKE_PREFIX))
-        except ValueError:
-            pass
-        else:
-            return FakeAdapter(real, scenario)
-    choices = ", ".join(["real", *(FAKE_PREFIX + s.value for s in Scenario)])
-    raise UnknownAdapterSetting(f"{name}={setting!r} is not known. Use one of: {choices}.")
-
+    scenario = adapter_setting(real.source, environ)
+    return real if scenario is None else FakeAdapter(real, scenario)

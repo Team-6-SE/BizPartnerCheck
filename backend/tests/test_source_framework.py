@@ -3,7 +3,11 @@
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import logging
+
 import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 
 from app.adapters.base import (
     CheckStatus,
@@ -13,9 +17,16 @@ from app.adapters.base import (
     SourceAdapter,
     SourceResult,
 )
-from app.adapters.fake import FakeAdapter, UnknownAdapterSetting, with_fake_from_env
+from app.adapters.fake import (
+    FakeAdapter,
+    UnknownAdapterSetting,
+    check_adapter_settings,
+    with_fake_from_env,
+)
 from app.adapters.limits import Attempt, Limits, run_with_limits
 from app.adapters.vies import ViesAdapter, get_vies_adapter
+from app.db.models import CheckResult, Organization, Partner
+from app.main import app
 
 SUBJECT = CheckSubject(vat_number="ATU12345678")
 NOW = datetime(2026, 11, 9, 12, 0, tzinfo=UTC)
@@ -295,3 +306,145 @@ def test_api_dependency_reads_the_environment(monkeypatch: pytest.MonkeyPatch) -
 
     assert isinstance(adapter, FakeAdapter)
     assert adapter.check(SUBJECT).status == CheckStatus.FINDING
+
+
+@pytest.mark.parametrize("scenario", list(Scenario))
+def test_fake_results_are_marked_in_the_evidence(scenario: Scenario) -> None:
+    """A stored fake answer must never look like a real VIES answer (S6.1)."""
+    result = fake_vies(scenario).check(SUBJECT)
+
+    assert result.raw["fake"] is True
+
+
+def test_real_results_are_not_marked() -> None:
+    result = ListSource({"result": "clean"}).check(SUBJECT)
+
+    assert "fake" not in result.raw
+
+
+# --- settings checked once at startup ------------------------------------------
+
+
+def test_startup_check_refuses_unknown_setting() -> None:
+    with pytest.raises(UnknownAdapterSetting, match="fake-okk"):
+        check_adapter_settings(["VIES"], {"VIES_ADAPTER": "fake-okk"})
+
+
+def test_startup_check_warns_about_active_fake(caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level(logging.WARNING):
+        check_adapter_settings(["VIES"], {"VIES_ADAPTER": "fake-finding"})
+
+    assert "VIES: FAKE adapter active" in caplog.text
+
+
+def test_startup_check_is_quiet_for_real_sources(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level(logging.WARNING):
+        check_adapter_settings(["VIES"], {"VIES_ADAPTER": "real"})
+
+    assert caplog.text == ""
+
+
+def test_api_does_not_start_with_unknown_setting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("VIES_ADAPTER", "fake-okk")
+
+    with pytest.raises(UnknownAdapterSetting):
+        with TestClient(app):
+            pass
+
+
+# --- an adapter bug gives ERROR, not a failed request --------------------------
+
+
+class BrokenSource(ListSource):
+    def __init__(self, broken: str) -> None:
+        super().__init__({"result": "clean"})
+        self.broken = broken
+        self.queries = 0
+
+    def query(self, subject: CheckSubject, timeout: float) -> dict[str, Any]:
+        self.queries += 1
+        if self.broken == "query":
+            raise RuntimeError("bug in query")
+        return super().query(subject, timeout)
+
+    def interpret(self, raw: dict[str, Any]) -> Interpretation:
+        if self.broken == "interpret":
+            raise KeyError("isValid")
+        return super().interpret(raw)
+
+    def describe(self, status: CheckStatus, raw: dict[str, Any]) -> str:
+        if self.broken == "describe":
+            raise ValueError("bug in describe")
+        return super().describe(status, raw)
+
+
+def test_crash_in_query_gives_error(caplog: pytest.LogCaptureFixture) -> None:
+    adapter = BrokenSource("query")
+
+    result = adapter.check(SUBJECT)
+
+    assert result.status == CheckStatus.ERROR
+    assert result.raw == {"error": "ADAPTER_FAILED", "message": "query: RuntimeError"}
+    assert adapter.queries == 1  # a bug is not retried
+    assert "LIST adapter: query() failed" in caplog.text
+
+
+def test_crash_in_interpret_gives_error_and_keeps_the_answer() -> None:
+    result = BrokenSource("interpret").check(SUBJECT)
+
+    assert result.status == CheckStatus.ERROR
+    assert result.raw["error"] == "ADAPTER_FAILED"
+    assert result.raw["answer"] == {"result": "clean"}
+
+
+def test_crash_in_describe_keeps_the_status_with_a_safe_text() -> None:
+    result = BrokenSource("describe").check(SUBJECT)
+
+    assert result.status == CheckStatus.OK
+    assert "could not be checked" in result.explanation
+
+
+def test_adapter_bug_is_stored_as_error_in_the_api(
+    client: TestClient, db: Session, fake_vies, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def broken(_raw: dict[str, Any]) -> Interpretation:
+        raise KeyError("isValid")
+
+    monkeypatch.setattr(fake_vies, "interpret", broken)
+    partner = client.post("/api/v1/partners", json={"vat_number": "ATU12345678"}).json()
+
+    response = client.post(f"/api/v1/partners/{partner['id']}/checks/vies")
+
+    assert response.status_code == 201
+    assert response.json()["status"] == "ERROR"
+    assert "not confirmed" in response.json()["message"]
+    stored = db.query(CheckResult).one()
+    assert stored.raw_response["error"] == "ADAPTER_FAILED"
+
+
+# --- NOT_APPLICABLE ------------------------------------------------------------
+
+
+def test_not_applicable_can_be_stored(db: Session) -> None:
+    organization = Organization(name="Org")
+    db.add(organization)
+    db.flush()
+    partner = Partner(organization_id=organization.id, vat_number="DE123456789")
+    db.add(partner)
+    db.flush()
+
+    db.add(
+        CheckResult(
+            partner_id=partner.id,
+            source="FIRMENBUCH",
+            status=CheckStatus.NOT_APPLICABLE.value,
+            raw_response={"reason": "not an Austrian company"},
+        )
+    )
+    db.flush()
+
+    assert db.query(CheckResult).one().status == "NOT_APPLICABLE"

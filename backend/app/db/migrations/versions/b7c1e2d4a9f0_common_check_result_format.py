@@ -1,6 +1,7 @@
 """common check result format for all sources
 
-Statuses become the same for every source: OK, FINDING, REVIEW, ERROR.
+Statuses become the same for every source: OK, FINDING, REVIEW, NOT_APPLICABLE, ERROR
+(status column widened to 20 characters for NOT_APPLICABLE).
 Existing VIES rows are renamed: VALID -> OK, INVALID -> FINDING.
 New columns: explanation (text shown at the time) and data_as_of (age of imported data).
 
@@ -30,22 +31,39 @@ def upgrade() -> None:
         sa.Column("data_as_of", sa.DateTime(timezone=True), nullable=True),
     )
     op.drop_constraint(CONSTRAINT, "check_results", type_="check")
+    op.alter_column(
+        "check_results",
+        "status",
+        existing_type=sa.String(length=10),
+        type_=sa.String(length=20),
+        existing_nullable=False,
+    )
     op.execute(
         "UPDATE check_results SET status = CASE status"
         " WHEN 'VALID' THEN 'OK' WHEN 'INVALID' THEN 'FINDING' ELSE status END"
     )
     op.create_check_constraint(
-        CONSTRAINT, "check_results", "status IN ('OK', 'FINDING', 'REVIEW', 'ERROR')"
+        CONSTRAINT,
+        "check_results",
+        "status IN ('OK', 'FINDING', 'REVIEW', 'NOT_APPLICABLE', 'ERROR')",
     )
 
 
 def downgrade() -> None:
     op.drop_constraint(CONSTRAINT, "check_results", type_="check")
-    # REVIEW did not exist before; "not confirmed" (ERROR) is the safe old meaning.
+    # REVIEW and NOT_APPLICABLE did not exist before; "not confirmed" (ERROR) is the
+    # safe old meaning.
     op.execute(
         "UPDATE check_results SET status = CASE status"
         " WHEN 'OK' THEN 'VALID' WHEN 'FINDING' THEN 'INVALID'"
-        " WHEN 'REVIEW' THEN 'ERROR' ELSE status END"
+        " WHEN 'REVIEW' THEN 'ERROR' WHEN 'NOT_APPLICABLE' THEN 'ERROR' ELSE status END"
+    )
+    op.alter_column(
+        "check_results",
+        "status",
+        existing_type=sa.String(length=20),
+        type_=sa.String(length=10),
+        existing_nullable=False,
     )
     op.create_check_constraint(
         CONSTRAINT, "check_results", "status IN ('VALID', 'INVALID', 'ERROR')"

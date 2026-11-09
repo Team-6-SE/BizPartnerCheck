@@ -4,7 +4,7 @@ import { request } from './client'
 export { ApiError } from './client'
 
 /** The same statuses for every source (backend app/adapters/base.py). */
-export type CheckStatus = 'OK' | 'FINDING' | 'REVIEW' | 'ERROR'
+export type CheckStatus = 'OK' | 'FINDING' | 'REVIEW' | 'NOT_APPLICABLE' | 'ERROR'
 
 export type CheckResult = {
   id: string

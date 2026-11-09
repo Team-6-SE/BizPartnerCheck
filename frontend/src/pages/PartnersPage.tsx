@@ -364,6 +364,7 @@ const STATUS_LABELS: Record<CheckStatus, string> = {
   OK: 'Valid',
   FINDING: 'Invalid',
   REVIEW: 'Please review',
+  NOT_APPLICABLE: 'Not applicable',
   ERROR: 'Error',
 }
 
@@ -402,6 +403,10 @@ function StatusBadge({ status }: { status: CheckStatus }) {
         {STATUS_LABELS.FINDING}
       </Badge>
     )
+  }
+  if (status === 'NOT_APPLICABLE') {
+    // Not a warning: the source simply does not cover this partner.
+    return <Badge variant="outline">{STATUS_LABELS.NOT_APPLICABLE}</Badge>
   }
   return (
     <Badge variant="outline">

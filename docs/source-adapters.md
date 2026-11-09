@@ -30,7 +30,7 @@ Optional: `data_as_of(raw)` for sources whose data is imported (e.g. BMF: time o
 | Field | Meaning |
 |---|---|
 | `source` | e.g. `VIES`, `BMF` |
-| `status` | `OK`, `FINDING`, `REVIEW` or `ERROR` (below) |
+| `status` | `OK`, `FINDING`, `REVIEW`, `NOT_APPLICABLE` or `ERROR` (below) |
 | `explanation` | the sentence from `describe` |
 | `retrieved_at` | when we asked |
 | `data_as_of` | how current the source's data was; `null` for live sources |
@@ -42,6 +42,7 @@ Optional: `data_as_of(raw)` for sources whose data is imported (e.g. BMF: time o
 | `OK` | The source confirms: nothing against the partner. | VIES: VAT number valid. BMF: not on the list. |
 | `FINDING` | The source reports a problem. | VIES: VAT number invalid. BMF: listed as fake company. |
 | `REVIEW` | Something may be wrong; a person must look. | BMF: same name, but other identifiers. |
+| `NOT_APPLICABLE` | The source does not cover this partner, so it was not asked. | Firmenbuch or GISA for a foreign company. |
 | `ERROR` | No clear answer (not reachable, too slow, unknown format). **Never counts as OK.** | VIES country office down. |
 
 Every check is stored as a new row in `check_results` (`source`, `status`, `checked_at` = `retrieved_at`,
@@ -55,6 +56,10 @@ Shared in `limits.py`, defaults from `docs/architecture.md`:
 - Pauses between tries grow: 0.5 s, 1 s. No new try when less than 1 s would be left.
 - No answer in time → `ERROR` with `NO_ANSWER_IN_TIME`; not reachable → `ERROR` with `NOT_REACHABLE`. Both are retried.
 - The adapter decides in `interpret` which of its own answers are temporary (VIES: `MS_UNAVAILABLE`, HTTP 5xx, …).
+- **An adapter bug never breaks the request.** If `query` or `interpret` raises anything else (e.g. a `KeyError`
+  on an answer nobody expected), the result is `ERROR` with `ADAPTER_FAILED`, the error is logged with its
+  traceback, and the check is stored. What the source answered is kept in `raw.answer`. Bugs are not retried.
+  If `describe` fails, the status stays and a neutral "could not be checked" text is used.
 
 Change them **without code changes** through environment variables. The per-source value wins:
 
@@ -80,13 +85,23 @@ Choose a fake per source with `{SOURCE}_ADAPTER`, e.g. on staging or for a demo:
 | `fake-timeout` | no answer in time (`ERROR`, after the normal retries) |
 | `fake-malformed` | an answer we cannot read (`ERROR`) |
 
-An unknown value stops with an error, so a typo on staging does not silently call the real service.
+The settings are checked **once when the API starts** (`check_adapter_settings` in `app/main.py`):
+
+- An unknown value (e.g. `fake-okk`) stops the start with an error that lists the allowed values, so a typo on
+  staging does not silently call the real service or fail every check.
+- An active fake is logged as a warning: `VIES: FAKE adapter active (VIES_ADAPTER=fake-finding) …`
+
+**Fake results are marked.** Check results are evidence (S6.1), so every fake result (also timeouts and errors)
+has `"fake": true` in the stored raw answer and can never be mistaken for a real answer.
+
+New sources must be added to `SOURCES` in `app/main.py` so their setting is checked at startup.
 
 ### Adding a new source
 
 1. Create `backend/app/adapters/<source>.py` with a class based on `SourceAdapter`, set `source = "<NAME>"`
    and implement the four methods.
-2. Add a FastAPI dependency `get_<source>_adapter()` that returns `with_fake_from_env(<Adapter>())`.
+2. Add a FastAPI dependency `get_<source>_adapter()` that returns `with_fake_from_env(<Adapter>())`, and add the
+   source name to `SOURCES` in `app/main.py`.
 3. Add a route that calls `_run_check(...)` in `app/partners/router.py`.
 4. Tests: fake HTTP answers (`httpx.MockTransport`) for the adapter, and the fake adapter in API tests.
 
@@ -98,6 +113,8 @@ An unknown value stops with an error, so a typo on staging does not silently cal
   (`VALID` → `OK`, `INVALID` → `FINDING`).
 - **`REVIEW` as its own status** instead of `FINDING` or `OK`: S4.3 requires a name-only BMF match to be shown
   as "possible match – please review", never as OK, but it is not proof either.
+- **`NOT_APPLICABLE` added now** (Epic E4 lists it): Firmenbuch and GISA only know Austrian companies. Adding it in
+  this migration avoids another change of the status constraint later. The `status` column is 20 characters long.
 - **Store the explanation** instead of only building it when reading: the sentence the user saw is part of the
   evidence (S6.1), and it stays the same even if the wording in the code changes later.
 - **Fakes through an environment variable** instead of a separate fake server: works in tests, locally and on
