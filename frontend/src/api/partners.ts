@@ -3,7 +3,8 @@ import { request } from './client'
 // Kept here as well, so existing imports from '@/api/partners' keep working.
 export { ApiError } from './client'
 
-export type CheckStatus = 'VALID' | 'INVALID' | 'ERROR'
+/** The same statuses for every source (backend app/adapters/base.py). */
+export type CheckStatus = 'OK' | 'FINDING' | 'REVIEW' | 'NOT_APPLICABLE' | 'ERROR'
 
 export type CheckResult = {
   id: string
@@ -13,6 +14,8 @@ export type CheckResult = {
   /** Explanation for people, e.g. why the check gave ERROR. */
   message: string
   company_name: string | null
+  /** How current the source's data was (imported lists); null for live sources. */
+  data_as_of: string | null
 }
 
 export type Partner = {

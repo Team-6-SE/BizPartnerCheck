@@ -10,30 +10,32 @@ The answer is JSON. The two fields we rely on:
     {"isValid": true, "userError": "VALID", "name": "...", "address": "...", ...}
 
 `isValid` is also false when VIES could not ask the country (e.g. `userError` is
-"MS_UNAVAILABLE" or "TIMEOUT"). So a number is only INVALID when VIES says
-`userError: "INVALID"`. Everything we cannot read clearly is ERROR, never VALID.
+"MS_UNAVAILABLE" or "TIMEOUT"). So a number is only invalid (FINDING) when VIES says
+`userError: "INVALID"`. Everything we cannot read clearly is ERROR, never OK.
 
+Time limits, retries and "no answer" handling come from app/adapters/base.py.
 Details and the reasons for these choices: docs/vies.md
 """
 
 import os
-import time
-from collections.abc import Callable
-from dataclasses import dataclass
-from enum import StrEnum
 from typing import Any
 
 import httpx2 as httpx
 
+from app.adapters.base import (
+    BAD_RESPONSE,
+    NO_ANSWER_IN_TIME,
+    NOT_REACHABLE,
+    CheckStatus,
+    CheckSubject,
+    Interpretation,
+    Scenario,
+    SourceAdapter,
+)
+from app.adapters.fake import with_fake_from_env
+
 DEFAULT_BASE_URL = "https://ec.europa.eu/taxation_customs/vies/rest-api"
 SOURCE = "VIES"
-
-# Limits from docs/architecture.md: 8 s per call, max. 2 retries, 30 s in total.
-TIMEOUT_SECONDS = 8.0
-MAX_RETRIES = 2
-DEADLINE_SECONDS = 30.0
-RETRY_DELAY_SECONDS = 0.5
-MIN_ATTEMPT_SECONDS = 1.0
 
 # VIES answers that may go away when we ask again a moment later.
 TEMPORARY_ERRORS = frozenset(
@@ -48,86 +50,31 @@ TEMPORARY_ERRORS = frozenset(
     }
 )
 
-# Our own codes for problems before VIES gave a usable answer.
-NO_ANSWER_IN_TIME = "NO_ANSWER_IN_TIME"
-NOT_REACHABLE = "NOT_REACHABLE"
-BAD_RESPONSE = "BAD_RESPONSE"
 
+class ViesAdapter(SourceAdapter):
+    source = SOURCE
 
-class CheckStatus(StrEnum):
-    VALID = "VALID"
-    INVALID = "INVALID"
-    ERROR = "ERROR"
-
-
-@dataclass(frozen=True)
-class ViesResult:
-    status: CheckStatus
-    # The VIES answer as we received it, or our own description of what went wrong.
-    raw: dict[str, Any]
-
-
-@dataclass(frozen=True)
-class _Attempt:
-    result: ViesResult
-    try_again: bool
-
-
-class ViesAdapter:
     def __init__(
         self,
         base_url: str = DEFAULT_BASE_URL,
         *,
-        timeout: float = TIMEOUT_SECONDS,
-        max_retries: int = MAX_RETRIES,
-        deadline: float = DEADLINE_SECONDS,
-        retry_delay: float = RETRY_DELAY_SECONDS,
         transport: httpx.BaseTransport | None = None,
-        clock: Callable[[], float] = time.monotonic,
-        sleep: Callable[[float], None] = time.sleep,
+        **options: Any,
     ) -> None:
+        super().__init__(**options)
         self.base_url = base_url.rstrip("/")
-        self.timeout = timeout
-        self.max_retries = max_retries
-        self.deadline = deadline
-        self.retry_delay = retry_delay
         # Tests pass a fake transport, so they never need the internet.
         self._transport = transport
-        self._clock = clock
-        self._sleep = sleep
 
-    def check(self, vat_number: str) -> ViesResult:
-        """Check a normalised VAT number such as "ATU12345678"."""
+    def query(self, subject: CheckSubject, timeout: float) -> dict[str, Any]:
+        """Ask VIES once about a normalised VAT number such as "ATU12345678"."""
+        vat_number = subject.vat_number
         country_code, number = vat_number[:2], vat_number[2:]
         url = f"{self.base_url}/ms/{country_code}/vat/{number}"
-        started = self._clock()
-
         with httpx.Client(transport=self._transport) as client:
-            attempt = 0
-            while True:
-                remaining = self.deadline - (self._clock() - started)
-                outcome = self._ask(client, url, min(self.timeout, remaining))
-                if not outcome.try_again or attempt >= self.max_retries:
-                    return outcome.result
-                delay = self.retry_delay * (attempt + 1)
-                time_left = self.deadline - (self._clock() - started) - delay
-                if time_left < MIN_ATTEMPT_SECONDS:
-                    # Not enough time left for another useful attempt.
-                    return outcome.result
-                self._sleep(delay)
-                attempt += 1
-
-    def _ask(self, client: httpx.Client, url: str, timeout: float) -> _Attempt:
-        try:
             response = client.get(
                 url, headers={"Accept": "application/json"}, timeout=timeout
             )
-        except httpx.TimeoutException:
-            return _error(
-                NO_ANSWER_IN_TIME, f"No answer within {round(timeout, 1):g} s.", True
-            )
-        except httpx.HTTPError as exc:
-            return _error(NOT_REACHABLE, type(exc).__name__, True)
 
         try:
             body = response.json()
@@ -135,33 +82,52 @@ class ViesAdapter:
             body = None
 
         if response.status_code >= 400 or not isinstance(body, dict):
-            temporary = response.status_code >= 500 or response.status_code == 429
             raw = (
                 body
                 if isinstance(body, dict)
                 else {"error": BAD_RESPONSE, "message": response.text[:500]}
             )
-            raw = {**raw, "httpStatus": response.status_code}
-            return _Attempt(ViesResult(CheckStatus.ERROR, raw), temporary)
+            # httpStatus marks an answer that was not a normal VIES result.
+            return {**raw, "httpStatus": response.status_code}
+        return body
 
-        return _read_answer(body)
+    def interpret(self, raw: dict[str, Any]) -> Interpretation:
+        http_status = raw.get("httpStatus")
+        if isinstance(http_status, int):
+            # 5xx and 429 may go away; other HTTP errors will not change when asked again.
+            temporary = http_status >= 500 or http_status == 429
+            return Interpretation(CheckStatus.ERROR, try_again=temporary)
 
+        is_valid = raw.get("isValid")
+        user_error = raw.get("userError")
+        if is_valid is True and user_error in (None, "VALID"):
+            return Interpretation(CheckStatus.OK)
+        if is_valid is False and user_error == "INVALID":
+            return Interpretation(CheckStatus.FINDING)
+        return Interpretation(
+            CheckStatus.ERROR, try_again=user_error in TEMPORARY_ERRORS
+        )
 
-def _error(code: str, message: str, try_again: bool) -> _Attempt:
-    return _Attempt(
-        ViesResult(CheckStatus.ERROR, {"error": code, "message": message}), try_again
-    )
+    def describe(self, status: CheckStatus, raw: dict[str, Any]) -> str:
+        return describe(status, raw)
 
-
-def _read_answer(body: dict[str, Any]) -> _Attempt:
-    is_valid = body.get("isValid")
-    user_error = body.get("userError")
-
-    if is_valid is True and user_error in (None, "VALID"):
-        return _Attempt(ViesResult(CheckStatus.VALID, body), False)
-    if is_valid is False and user_error == "INVALID":
-        return _Attempt(ViesResult(CheckStatus.INVALID, body), False)
-    return _Attempt(ViesResult(CheckStatus.ERROR, body), user_error in TEMPORARY_ERRORS)
+    def sample_answer(self, scenario: Scenario, subject: CheckSubject) -> dict[str, Any]:
+        number = subject.vat_number[2:]
+        if scenario == Scenario.FINDING:
+            return {
+                "isValid": False,
+                "userError": "INVALID",
+                "name": "---",
+                "address": "---",
+                "vatNumber": number,
+            }
+        return {
+            "isValid": True,
+            "userError": "VALID",
+            "name": "Muster Bau GmbH (fake VIES)",
+            "address": "Hauptstrasse 1\nAT-1010 Wien",
+            "vatNumber": number,
+        }
 
 
 def error_code(raw: dict[str, Any]) -> str | None:
@@ -199,9 +165,9 @@ _ERROR_MESSAGES = {
 
 def describe(status: CheckStatus, raw: dict[str, Any]) -> str:
     """One sentence for people: what the result means and what to do."""
-    if status == CheckStatus.VALID:
+    if status == CheckStatus.OK:
         return "VIES confirms that this VAT number is valid."
-    if status == CheckStatus.INVALID:
+    if status == CheckStatus.FINDING:
         return "VIES says this VAT number is not valid (not registered or no longer active)."
     reason = _ERROR_MESSAGES.get(
         error_code(raw) or "", "VIES could not check the number."
@@ -209,6 +175,12 @@ def describe(status: CheckStatus, raw: dict[str, Any]) -> str:
     return f"{reason} The number was not confirmed. Please try again later."
 
 
-def get_vies_adapter() -> ViesAdapter:
-    """FastAPI dependency. VIES_BASE_URL can point to a stub for staging/load tests."""
-    return ViesAdapter(os.environ.get("VIES_BASE_URL") or DEFAULT_BASE_URL)
+def get_vies_adapter() -> SourceAdapter:
+    """FastAPI dependency.
+
+    VIES_BASE_URL can point to a stub for staging/load tests; VIES_ADAPTER=fake-...
+    uses a fake without any network (see app/adapters/fake.py).
+    """
+    return with_fake_from_env(
+        ViesAdapter(os.environ.get("VIES_BASE_URL") or DEFAULT_BASE_URL)
+    )

@@ -8,6 +8,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     String,
+    Text,
     UniqueConstraint,
     func,
 )
@@ -50,16 +51,18 @@ class Partner(Base):
 
 
 class CheckResult(Base):
-    """One check of a partner against one source (e.g. VIES).
+    """One check of a partner against one source (e.g. VIES, BMF).
 
     A new row is added for every check; old rows are never changed, so the history
-    shows what a source said at which time.
+    shows what a source said at which time. The columns follow the common result of
+    all source adapters (app/adapters/base.py, docs/source-adapters.md).
     """
 
     __tablename__ = "check_results"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('VALID', 'INVALID', 'ERROR')", name="ck_check_results_status"
+            "status IN ('OK', 'FINDING', 'REVIEW', 'NOT_APPLICABLE', 'ERROR')",
+            name="ck_check_results_status",
         ),
         # Fast lookup of the latest result per partner.
         Index("ix_check_results_partner_checked_at", "partner_id", "checked_at"),
@@ -70,7 +73,7 @@ class CheckResult(Base):
         ForeignKey("partners.id"), nullable=False
     )
     source: Mapped[str] = mapped_column(String(20), nullable=False)
-    status: Mapped[str] = mapped_column(String(10), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
     # Set by the app (not now() in the database), so two checks in one
     # transaction still get different times.
     checked_at: Mapped[datetime] = mapped_column(
@@ -78,6 +81,12 @@ class CheckResult(Base):
     )
     # The answer of the source exactly as received (or what went wrong).
     raw_response: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    # The sentence shown to people at the time of the check (empty for checks made
+    # before it was stored; those are explained from raw_response).
+    explanation: Mapped[str | None] = mapped_column(Text)
+    # How current the source's data was (imported lists such as BMF); empty for
+    # live sources, whose data is as of checked_at.
+    data_as_of: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class SecurityEvent(Base):

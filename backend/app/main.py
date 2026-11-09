@@ -1,18 +1,33 @@
+import contextlib
+from collections.abc import AsyncIterator
+
 from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import OperationalError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.adapters import vies
+from app.adapters.fake import check_adapter_settings
 from app.auth import AuthenticatedUser, get_current_user
 from app.errors import error_body
 from app.partners.router import router as partners_router
 from app.security.background import security_event_sync
 from app.security.router import router as security_router
 
-app = FastAPI(
-    title="BizPartnerCheck API", version="0.1.0", lifespan=security_event_sync
-)
+# Every external source; their {SOURCE}_ADAPTER settings are checked at startup.
+SOURCES = (vies.SOURCE,)
+
+
+@contextlib.asynccontextmanager
+async def lifespan(app_: FastAPI) -> AsyncIterator[None]:
+    # Stops the start on a wrong {SOURCE}_ADAPTER value instead of failing every check.
+    check_adapter_settings(SOURCES)
+    async with security_event_sync(app_):
+        yield
+
+
+app = FastAPI(title="BizPartnerCheck API", version="0.1.0", lifespan=lifespan)
 
 REQUEST_PARTS = {"body", "path", "query", "header", "cookie"}
 API_PREFIX = "/api/v1"

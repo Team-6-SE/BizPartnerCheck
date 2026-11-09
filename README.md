@@ -110,6 +110,7 @@ lost: admin console → Users → `admin@bizpartnercheck.local` → Credentials 
 - The Keycloak setup comes from `infra/keycloak/import/bizpartnercheck-realm.json`, the look of the sign-in pages from `infra/keycloak/themes/bizpartnercheck`. After changing it, or to get a clean Keycloak: `docker compose -f infra/docker-compose.yml up -d --force-recreate keycloak`. Users created by hand are lost then.
 - How sign-in works and which settings exist: [docs/authentication.md](docs/authentication.md)
 - Second factor, roles and the security log: [docs/security-log.md](docs/security-log.md)
+- How external sources are connected (result format, time limits, fake sources): [docs/source-adapters.md](docs/source-adapters.md)
 
 ### End-to-end tests (browser)
 **Requirements:** database, Keycloak, backend and frontend are running (see above).

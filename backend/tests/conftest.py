@@ -11,7 +11,8 @@ from sqlalchemy import delete, inspect, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from app.adapters.vies import CheckStatus, ViesResult, get_vies_adapter
+from app.adapters.base import CheckSubject
+from app.adapters.vies import ViesAdapter, get_vies_adapter
 from app.auth import TokenVerifier, get_token_verifier
 from app.db.models import CheckResult, Partner, SecurityEvent
 from app.db.session import engine, get_db
@@ -32,16 +33,21 @@ VALID_ANSWER = {
 }
 
 
-class FakeVies:
-    """Stands in for VIES in API tests: no internet, answer chosen by the test."""
+class FakeVies(ViesAdapter):
+    """Stands in for VIES in API tests: no internet, answer chosen by the test.
+
+    Only the call to VIES is replaced; reading and explaining the answer is the real
+    adapter code.
+    """
 
     def __init__(self) -> None:
-        self.result = ViesResult(CheckStatus.VALID, VALID_ANSWER)
+        super().__init__(sleep=lambda _seconds: None)
+        self.answer: dict[str, Any] = VALID_ANSWER
         self.checked: list[str] = []
 
-    def check(self, vat_number: str) -> ViesResult:
-        self.checked.append(vat_number)
-        return self.result
+    def query(self, subject: CheckSubject, timeout: float) -> dict[str, Any]:
+        self.checked.append(subject.vat_number)
+        return self.answer
 
 
 TEST_ISSUER = "http://keycloak.test/realms/bizpartnercheck"
