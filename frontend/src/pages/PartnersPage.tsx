@@ -275,7 +275,7 @@ export function PartnersPage() {
                 {partners.map((partner) => {
                   const check = partner.latest_vies_check
                   const checking = checkingIds.has(partner.id)
-                  const companyName = check?.status === 'VALID' ? check.company_name : null
+                  const companyName = check?.status === 'OK' ? check.company_name : null
                   return (
                     <TableRow
                       key={partner.id}
@@ -359,9 +359,11 @@ function CheckButton({
   )
 }
 
+// VIES wording: OK means the VAT number is valid, FINDING that it is not.
 const STATUS_LABELS: Record<CheckStatus, string> = {
-  VALID: 'Valid',
-  INVALID: 'Invalid',
+  OK: 'Valid',
+  FINDING: 'Invalid',
+  REVIEW: 'Please review',
   ERROR: 'Error',
 }
 
@@ -377,7 +379,7 @@ function ViesResult({ check, fresh }: { check: CheckResult; fresh: boolean }) {
           {dateFormat.format(new Date(check.checked_at))}
         </time>
       </div>
-      {check.status !== 'VALID' && (
+      {check.status !== 'OK' && (
         <p className="text-xs text-muted-foreground">{check.message}</p>
       )}
     </div>
@@ -385,26 +387,26 @@ function ViesResult({ check, fresh }: { check: CheckResult; fresh: boolean }) {
 }
 
 function StatusBadge({ status }: { status: CheckStatus }) {
-  if (status === 'VALID') {
+  if (status === 'OK') {
     return (
       <Badge variant="outline">
         <CircleCheckIcon data-icon="inline-start" className="text-emerald-600 dark:text-emerald-400" />
-        {STATUS_LABELS.VALID}
+        {STATUS_LABELS.OK}
       </Badge>
     )
   }
-  if (status === 'INVALID') {
+  if (status === 'FINDING') {
     return (
       <Badge variant="destructive">
         <CircleXIcon data-icon="inline-start" />
-        {STATUS_LABELS.INVALID}
+        {STATUS_LABELS.FINDING}
       </Badge>
     )
   }
   return (
     <Badge variant="outline">
       <TriangleAlertIcon data-icon="inline-start" className="text-amber-600 dark:text-amber-400" />
-      {STATUS_LABELS.ERROR}
+      {STATUS_LABELS[status]}
     </Badge>
   )
 }

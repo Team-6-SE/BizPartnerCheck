@@ -7,7 +7,6 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.adapters.vies import CheckStatus, ViesResult
 from app.db.models import CheckResult, Organization, Partner
 
 INVALID_ANSWER = {"isValid": False, "userError": "INVALID", "name": "---"}
@@ -39,7 +38,7 @@ def test_valid_result_is_returned_and_stored(
 
     assert response.status_code == 201
     body = response.json()
-    assert body["status"] == "VALID"
+    assert body["status"] == "OK"
     assert body["source"] == "VIES"
     assert body["company_name"] == "Muster Bau GmbH"
     assert body["message"]
@@ -48,19 +47,23 @@ def test_valid_result_is_returned_and_stored(
     stored = db.get(CheckResult, uuid.UUID(body["id"]))
     assert stored is not None
     assert stored.partner_id == uuid.UUID(partner["id"])
-    assert stored.status == "VALID"
+    assert stored.status == "OK"
     assert stored.raw_response["userError"] == "VALID"
+    # The explanation shown now is kept as evidence; VIES is live, so no data age.
+    assert stored.explanation == body["message"]
+    assert stored.data_as_of is None
+    assert body["data_as_of"] is None
     # Stored with the time of the check.
     assert abs(stored.checked_at - datetime.now(UTC)) < timedelta(minutes=1)
 
 
 def test_invalid_result(client: TestClient, fake_vies) -> None:
     partner = add_partner(client)
-    fake_vies.result = ViesResult(CheckStatus.INVALID, INVALID_ANSWER)
+    fake_vies.answer = INVALID_ANSWER
 
     body = run_check(client, partner["id"]).json()
 
-    assert body["status"] == "INVALID"
+    assert body["status"] == "FINDING"
     assert body["company_name"] is None
     assert "not valid" in body["message"]
 
@@ -69,10 +72,7 @@ def test_error_result_is_stored_and_explained(
     client: TestClient, db: Session, fake_vies
 ) -> None:
     partner = add_partner(client)
-    fake_vies.result = ViesResult(
-        CheckStatus.ERROR,
-        {"error": "NO_ANSWER_IN_TIME", "message": "No answer within 8 s."},
-    )
+    fake_vies.answer = {"error": "NO_ANSWER_IN_TIME", "message": "No answer within 8 s."}
 
     response = run_check(client, partner["id"])
 
@@ -88,9 +88,9 @@ def test_list_shows_latest_result_after_reload(client: TestClient, fake_vies) ->
     checked = add_partner(client, "ATU11111111")
     not_checked = add_partner(client, "ATU22222222")
 
-    fake_vies.result = ViesResult(CheckStatus.ERROR, {"error": "NOT_REACHABLE"})
+    fake_vies.answer = {"error": "NOT_REACHABLE"}
     run_check(client, checked["id"])
-    fake_vies.result = ViesResult(CheckStatus.INVALID, INVALID_ANSWER)
+    fake_vies.answer = INVALID_ANSWER
     latest = run_check(client, checked["id"]).json()
 
     partners = {p["vat_number"]: p for p in client.get("/api/v1/partners").json()}
@@ -144,7 +144,7 @@ def test_other_organizations_results_are_not_listed(
     db.flush()
     db.add(
         CheckResult(
-            partner_id=foreign.id, source="VIES", status="VALID", raw_response={}
+            partner_id=foreign.id, source="VIES", status="OK", raw_response={}
         )
     )
     db.flush()
@@ -162,3 +162,23 @@ def test_malformed_partner_id_uses_error_format(client: TestClient) -> None:
     assert response.status_code == 422
     assert response.json()["detail"]["code"] == "invalid_request"
     assert response.json()["detail"]["field"] == "partner_id"
+
+
+def test_old_checks_without_stored_explanation_are_still_explained(
+    client: TestClient, db: Session
+) -> None:
+    partner = add_partner(client)
+    db.add(
+        CheckResult(
+            partner_id=uuid.UUID(partner["id"]),
+            source="VIES",
+            status="FINDING",
+            raw_response=INVALID_ANSWER,
+        )
+    )
+    db.flush()
+
+    check = client.get("/api/v1/partners").json()[0]["latest_vies_check"]
+
+    assert check["status"] == "FINDING"
+    assert "not valid" in check["message"]

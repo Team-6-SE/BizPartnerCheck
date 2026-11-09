@@ -22,24 +22,26 @@ Greece is `EL` and Northern Ireland `XI`, as in VIES. Example answer (shortened)
 {"isValid": true, "userError": "VALID", "name": "Red Bull GmbH", "address": "Am Brunnen 1\nAT-5330 Fuschl/See", ...}
 ```
 
-**How we read the answer** (`backend/app/adapters/vies.py`):
+**How we read the answer** (`backend/app/adapters/vies.py`). The statuses are the common ones of all sources
+([source-adapters.md](source-adapters.md)); the app shows VIES `OK` as "Valid" and `FINDING` as "Invalid".
 
 | VIES answer | Our result |
 |---|---|
-| `isValid: true`, `userError: "VALID"` | `VALID` |
-| `isValid: false`, `userError: "INVALID"` | `INVALID` |
+| `isValid: true`, `userError: "VALID"` | `OK` (valid) |
+| `isValid: false`, `userError: "INVALID"` | `FINDING` (not valid) |
 | any other `userError` (`MS_UNAVAILABLE`, `TIMEOUT`, `SERVICE_UNAVAILABLE`, `MS_MAX_CONCURRENT_REQ`, …) | `ERROR` |
 | no answer in time, not reachable, HTTP error, not JSON, unknown format | `ERROR` |
 
 Important: VIES also sends `isValid: false` when the country's tax office was not available. So
-`isValid: false` alone does **not** mean invalid. Anything we cannot read clearly is `ERROR`, never `VALID`.
+`isValid: false` alone does **not** mean invalid. Anything we cannot read clearly is `ERROR`, never `OK`.
 
 **Time limits** (from `docs/architecture.md`): 8 s per call, max. 2 retries, 30 s in total. We only ask again
 for temporary problems (timeout, not reachable, HTTP 5xx/429, `MS_UNAVAILABLE`, `TIMEOUT`,
-`SERVICE_UNAVAILABLE`, `*_MAX_CONCURRENT_REQ*`), with a short pause (0.5 s, 1 s).
+`SERVICE_UNAVAILABLE`, `*_MAX_CONCURRENT_REQ*`), with a short pause (0.5 s, 1 s). The limits are shared by all
+sources and can be changed through environment variables (see [source-adapters.md](source-adapters.md)).
 
 **What is stored:** every check adds one row to `check_results` (partner, source `VIES`, status, time,
-the raw VIES answer as JSONB). Rows are never changed, so the history stays. The partner list shows the
+the explanation shown, the raw VIES answer as JSONB). Rows are never changed, so the history stays. The partner list shows the
 latest result. `ERROR` results are stored too: they show that the number could not be confirmed at that time.
 
 **API:**
@@ -49,7 +51,8 @@ latest result. `ERROR` results are stored too: they show that the number could n
 - `GET /api/v1/partners` – each partner has `latest_vies_check` (or `null`).
 
 **Configuration:** `VIES_BASE_URL` (optional) points to another server, e.g. a stub for staging or load tests.
-Default is the EU Commission service.
+Default is the EU Commission service. `VIES_ADAPTER=fake-ok` (or `fake-finding`, `fake-timeout`, `fake-malformed`)
+uses a fake without any network, e.g. for a demo or staging.
 
 ## Why / Alternatives
 

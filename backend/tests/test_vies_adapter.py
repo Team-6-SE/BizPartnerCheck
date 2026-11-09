@@ -5,8 +5,9 @@ from collections.abc import Callable
 import httpx2 as httpx
 import pytest
 
+from app.adapters.base import CheckStatus, CheckSubject, SourceResult
+from app.adapters.limits import Limits
 from app.adapters.vies import (
-    CheckStatus,
     ViesAdapter,
     company_name,
     describe,
@@ -53,6 +54,7 @@ def make_adapter(
         requests.append(request)
         return handler(request)
 
+    options.setdefault("limits", Limits())  # defaults, whatever the environment says
     adapter = ViesAdapter(
         BASE_URL,
         transport=httpx.MockTransport(record),
@@ -60,6 +62,10 @@ def make_adapter(
         **options,
     )
     return adapter, requests
+
+
+def check(adapter: ViesAdapter, vat_number: str) -> SourceResult:
+    return adapter.check(CheckSubject(vat_number=vat_number))
 
 
 def answers(*items: dict | Exception) -> Handler:
@@ -75,32 +81,32 @@ def answers(*items: dict | Exception) -> Handler:
     return handler
 
 
-def test_valid_number() -> None:
+def test_valid_number_is_ok() -> None:
     adapter, requests = make_adapter(answers(VALID))
 
-    result = adapter.check("ATU33864707")
+    result = check(adapter, "ATU33864707")
 
-    assert result.status == CheckStatus.VALID
+    assert result.status == CheckStatus.OK
     assert result.raw == VALID
     assert len(requests) == 1
     assert str(requests[0].url) == f"{BASE_URL}/ms/AT/vat/U33864707"
 
 
-def test_invalid_number() -> None:
+def test_invalid_number_is_finding() -> None:
     adapter, requests = make_adapter(answers(INVALID))
 
-    result = adapter.check("ATU12345678")
+    result = check(adapter, "ATU12345678")
 
-    assert result.status == CheckStatus.INVALID
+    assert result.status == CheckStatus.FINDING
     assert result.raw == INVALID
     assert len(requests) == 1  # a clear answer is not asked again
 
 
-def test_timeout_gives_error_never_valid() -> None:
+def test_timeout_gives_error_never_ok() -> None:
     timeout = httpx.ReadTimeout("timed out")
     adapter, requests = make_adapter(answers(timeout, timeout, timeout))
 
-    result = adapter.check("ATU33864707")
+    result = check(adapter, "ATU33864707")
 
     assert result.status == CheckStatus.ERROR
     assert result.raw["error"] == "NO_ANSWER_IN_TIME"
@@ -110,9 +116,9 @@ def test_timeout_gives_error_never_valid() -> None:
 def test_timeout_then_answer_uses_the_answer() -> None:
     adapter, requests = make_adapter(answers(httpx.ConnectTimeout("slow"), VALID))
 
-    result = adapter.check("ATU33864707")
+    result = check(adapter, "ATU33864707")
 
-    assert result.status == CheckStatus.VALID
+    assert result.status == CheckStatus.OK
     assert len(requests) == 2
 
 
@@ -120,7 +126,7 @@ def test_not_reachable_gives_error() -> None:
     down = httpx.ConnectError("connection refused")
     adapter, _ = make_adapter(answers(down, down, down))
 
-    result = adapter.check("ATU33864707")
+    result = check(adapter, "ATU33864707")
 
     assert result.status == CheckStatus.ERROR
     assert result.raw["error"] == "NOT_REACHABLE"
@@ -133,7 +139,7 @@ def test_not_reachable_gives_error() -> None:
 def test_country_not_available_is_error_not_invalid(code: str) -> None:
     adapter, requests = make_adapter(answers(*[unavailable(code)] * 3))
 
-    result = adapter.check("ATU33864707")
+    result = check(adapter, "ATU33864707")
 
     assert result.status == CheckStatus.ERROR
     assert result.raw["userError"] == code
@@ -143,7 +149,7 @@ def test_country_not_available_is_error_not_invalid(code: str) -> None:
 def test_permanent_vies_error_is_not_asked_again() -> None:
     adapter, requests = make_adapter(answers(unavailable("INVALID_INPUT")))
 
-    result = adapter.check("ATU33864707")
+    result = check(adapter, "ATU33864707")
 
     assert result.status == CheckStatus.ERROR
     assert len(requests) == 1
@@ -163,7 +169,7 @@ def test_permanent_vies_error_is_not_asked_again() -> None:
 def test_unexpected_answers_give_error(response: httpx.Response) -> None:
     adapter, _ = make_adapter(lambda _request: response)
 
-    result = adapter.check("ATU33864707")
+    result = check(adapter, "ATU33864707")
 
     assert result.status == CheckStatus.ERROR
     assert isinstance(result.raw, dict)
@@ -174,7 +180,7 @@ def test_http_error_keeps_status_and_body() -> None:
         lambda _request: httpx.Response(404, text="Not Found")
     )
 
-    result = adapter.check("ATU33864707")
+    result = check(adapter, "ATU33864707")
 
     assert result.status == CheckStatus.ERROR
     assert result.raw == {
@@ -192,9 +198,9 @@ def test_overall_time_limit_stops_retries() -> None:
         now[0] += 20.0  # every call takes 20 s
         raise httpx.ReadTimeout("timed out")
 
-    adapter, requests = make_adapter(slow, clock=lambda: now[0], deadline=30.0)
+    adapter, requests = make_adapter(slow, clock=lambda: now[0], limits=Limits(deadline=30.0))
 
-    result = adapter.check("ATU33864707")
+    result = check(adapter, "ATU33864707")
 
     assert result.status == CheckStatus.ERROR
     assert len(requests) == 2  # a third try would end after the 30 s limit
@@ -204,8 +210,8 @@ def test_overall_time_limit_stops_retries() -> None:
 def test_greece_uses_el_and_northern_ireland_xi() -> None:
     adapter, requests = make_adapter(answers(VALID, VALID))
 
-    adapter.check("EL123456789")
-    adapter.check("XI123456789")
+    check(adapter, "EL123456789")
+    check(adapter, "XI123456789")
 
     assert requests[0].url.path.endswith("/ms/EL/vat/123456789")
     assert requests[1].url.path.endswith("/ms/XI/vat/123456789")
@@ -216,8 +222,8 @@ def test_helpers_for_people() -> None:
     assert company_name(INVALID) is None
     assert error_code(unavailable("MS_UNAVAILABLE")) == "MS_UNAVAILABLE"
     assert error_code({"errorWrappers": [{"error": "IP_BLOCKED"}]}) == "IP_BLOCKED"
-    assert "valid" in describe(CheckStatus.VALID, VALID)
-    assert "not valid" in describe(CheckStatus.INVALID, INVALID)
+    assert "valid" in describe(CheckStatus.OK, VALID)
+    assert "not valid" in describe(CheckStatus.FINDING, INVALID)
     message = describe(CheckStatus.ERROR, {"error": "NO_ANSWER_IN_TIME"})
     assert "did not answer in time" in message
     assert "not confirmed" in message
