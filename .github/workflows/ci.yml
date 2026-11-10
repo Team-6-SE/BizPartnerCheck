@@ -44,3 +44,24 @@ jobs:
         # Shows the coverage table on the run's summary page of every PR.
         if: always()
         run: uv run coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
+  
+  frontend:
+    name: Frontend (lint, unit tests, type check, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Lint (oxlint)
+        run: npm run lint
+      - name: Unit tests (Vitest)
+        run: npm test
+      - name: Type check and production build
+        run: npm run build
