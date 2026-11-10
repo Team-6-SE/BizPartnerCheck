@@ -12,6 +12,7 @@ import {
   ApiError,
   createPartner,
   listPartners,
+  runBmfCheck,
   runViesCheck,
   type CheckResult,
   type CheckStatus,
@@ -71,10 +72,10 @@ export function PartnersPage() {
   const [announcement, setAnnouncement] = useState('')
   const [newPartnerId, setNewPartnerId] = useState<string | null>(null)
 
-  // VIES checks: which partners are being checked, and requests that failed.
+  // Checks (VIES, then BMF): which partners are being checked, and requests that failed.
   const [checkingIds, setCheckingIds] = useState<ReadonlySet<string>>(new Set())
-  const [checkErrors, setCheckErrors] = useState<Record<string, string>>({})
-  const [freshCheckId, setFreshCheckId] = useState<string | null>(null)
+  const [checkErrors, setCheckErrors] = useState<Record<string, string[]>>({})
+  const [freshCheckIds, setFreshCheckIds] = useState<ReadonlySet<string>>(new Set())
   const checkingRef = useRef(new Set<string>())
 
   const inputRef = useRef<HTMLInputElement>(null)
@@ -144,19 +145,36 @@ export function PartnersPage() {
     checkingRef.current.add(partner.id)
     setCheckingIds(new Set(checkingRef.current))
     setCheckErrors(({ [partner.id]: _old, ...rest }) => rest)
-    setAnnouncement(`Checking ${partner.vat_number} in VIES…`)
+    setAnnouncement(`Checking ${partner.vat_number} in VIES and the BMF list…`)
 
+    const errors: string[] = []
+    const fresh: string[] = []
+    const said: string[] = []
     try {
-      const result = await runViesCheck(partner.id)
-      setPartners((current) =>
-        current.map((p) => (p.id === partner.id ? { ...p, latest_vies_check: result } : p)),
-      )
-      setFreshCheckId(result.id)
-      setAnnouncement(`${partner.vat_number}: ${STATUS_LABELS[result.status]}. ${result.message}`)
-    } catch (error) {
-      const message = errorMessage(error)
-      setCheckErrors((current) => ({ ...current, [partner.id]: message }))
-      setAnnouncement(`The check for ${partner.vat_number} could not run. ${message}`)
+      // VIES first: the BMF check compares the company name that VIES returns.
+      try {
+        const result = await runViesCheck(partner.id)
+        setPartners((current) =>
+          current.map((p) => (p.id === partner.id ? { ...p, latest_vies_check: result } : p)),
+        )
+        fresh.push(result.id)
+        said.push(`VIES: ${STATUS_LABELS[result.status]}.`)
+      } catch (error) {
+        errors.push(`VIES: ${errorMessage(error)}`)
+      }
+      try {
+        const result = await runBmfCheck(partner.id)
+        setPartners((current) =>
+          current.map((p) => (p.id === partner.id ? { ...p, latest_bmf_check: result } : p)),
+        )
+        fresh.push(result.id)
+        said.push(`BMF list: ${BMF_LABELS[result.status]}. ${result.message}`)
+      } catch (error) {
+        errors.push(`BMF list: ${errorMessage(error)}`)
+      }
+      setFreshCheckIds(new Set(fresh))
+      if (errors.length) setCheckErrors((current) => ({ ...current, [partner.id]: errors }))
+      setAnnouncement(`${partner.vat_number}: ${[...said, ...errors].join(' ')}`)
     } finally {
       checkingRef.current.delete(partner.id)
       setCheckingIds(new Set(checkingRef.current))
@@ -167,7 +185,7 @@ export function PartnersPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Partners"
-        description="Add a partner by its VAT number and check it with the EU VIES service."
+        description="Add a partner by its VAT number and check it with the EU VIES service and the BMF list of fake companies."
       />
 
       <Card>
@@ -222,7 +240,7 @@ export function PartnersPage() {
           </CardTitle>
           <CardDescription>
             All partners of your organization, newest first. “Check” asks VIES whether the VAT
-            number is valid.
+            number is valid and compares the partner with the BMF list of fake companies.
           </CardDescription>
           {loadState.status === 'ready' && partners.length > 0 && (
             <CardAction>
@@ -265,7 +283,8 @@ export function PartnersPage() {
                 <TableRow>
                   <TableHead>VAT number</TableHead>
                   <TableHead>VIES result</TableHead>
-                  <TableHead className="text-right max-md:hidden">Added</TableHead>
+                  <TableHead>BMF list</TableHead>
+                  <TableHead className="text-right max-xl:hidden">Added</TableHead>
                   <TableHead className="text-right max-sm:hidden">
                     <span className="sr-only">Actions</span>
                   </TableHead>
@@ -274,6 +293,8 @@ export function PartnersPage() {
               <TableBody>
                 {partners.map((partner) => {
                   const check = partner.latest_vies_check
+                  const bmfCheck = partner.latest_bmf_check
+                  const errors = checkErrors[partner.id]
                   const checking = checkingIds.has(partner.id)
                   const companyName = check?.status === 'OK' ? check.company_name : null
                   return (
@@ -299,17 +320,32 @@ export function PartnersPage() {
                       </TableCell>
                       <TableCell className="min-w-44 align-top whitespace-normal">
                         {check ? (
-                          <ViesResult check={check} fresh={check.id === freshCheckId} />
+                          <CheckResultView
+                            check={check}
+                            labels={STATUS_LABELS}
+                            fresh={freshCheckIds.has(check.id)}
+                          />
                         ) : (
                           <span className="text-muted-foreground">Not checked yet</span>
                         )}
-                        {checkErrors[partner.id] && (
-                          <p className="mt-1 text-xs text-destructive">
-                            Check could not run: {checkErrors[partner.id]}
+                        {errors?.map((error) => (
+                          <p key={error} className="mt-1 text-xs text-destructive">
+                            Check could not run: {error}
                           </p>
+                        ))}
+                      </TableCell>
+                      <TableCell className="min-w-52 align-top whitespace-normal">
+                        {bmfCheck ? (
+                          <CheckResultView
+                            check={bmfCheck}
+                            labels={BMF_LABELS}
+                            fresh={freshCheckIds.has(bmfCheck.id)}
+                          />
+                        ) : (
+                          <span className="text-muted-foreground">Not checked yet</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-right align-top text-muted-foreground tabular-nums max-md:hidden">
+                      <TableCell className="text-right align-top text-muted-foreground tabular-nums max-xl:hidden">
                         <time dateTime={partner.created_at}>
                           {dateFormat.format(new Date(partner.created_at))}
                         </time>
@@ -353,14 +389,20 @@ function CheckButton({
       onClick={() => onCheck(partner)}
     >
       {checking ? <Spinner data-icon="inline-start" /> : <SearchCheckIcon data-icon="inline-start" />}
-      {checking ? 'Checking…' : partner.latest_vies_check ? 'Check Again' : 'Check'}
-      <span className="sr-only"> {partner.vat_number} in VIES</span>
+      {checking
+        ? 'Checking…'
+        : partner.latest_vies_check || partner.latest_bmf_check
+          ? 'Check Again'
+          : 'Check'}
+      <span className="sr-only"> {partner.vat_number} in VIES and the BMF list</span>
     </Button>
   )
 }
 
+type Labels = Record<CheckStatus, string>
+
 // VIES wording: OK means the VAT number is valid, FINDING that it is not.
-const STATUS_LABELS: Record<CheckStatus, string> = {
+const STATUS_LABELS: Labels = {
   OK: 'Valid',
   FINDING: 'Invalid',
   REVIEW: 'Please review',
@@ -368,31 +410,72 @@ const STATUS_LABELS: Record<CheckStatus, string> = {
   ERROR: 'Error',
 }
 
-function ViesResult({ check, fresh }: { check: CheckResult; fresh: boolean }) {
+// BMF list of fake companies: FINDING means the partner is listed.
+const BMF_LABELS: Labels = {
+  OK: 'Not listed',
+  FINDING: 'Listed',
+  REVIEW: 'Possible match',
+  NOT_APPLICABLE: 'Not applicable',
+  ERROR: 'Error',
+}
+
+const dayFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' })
+const MAX_LIST_AGE_MS = 24 * 60 * 60 * 1000
+
+/** Imported lists (BMF): older than 24 hours when the check ran. */
+function isStale(check: CheckResult): boolean {
+  if (!check.data_as_of) return false
+  return new Date(check.checked_at).getTime() - new Date(check.data_as_of).getTime() > MAX_LIST_AGE_MS
+}
+
+function CheckResultView({
+  check,
+  labels,
+  fresh,
+}: {
+  check: CheckResult
+  labels: Labels
+  fresh: boolean
+}) {
+  const stale = isStale(check)
   return (
     <div
       data-fresh={fresh ? true : undefined}
       className="flex flex-col items-start gap-1 data-fresh:animate-in data-fresh:fade-in-0 data-fresh:duration-200 data-fresh:ease-out-strong motion-reduce:animate-none"
     >
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <StatusBadge status={check.status} />
+        <StatusBadge status={check.status} labels={labels} />
         <time dateTime={check.checked_at} className="text-xs text-muted-foreground tabular-nums">
           {dateFormat.format(new Date(check.checked_at))}
         </time>
       </div>
-      {check.status !== 'OK' && (
+      {(check.status !== 'OK' || stale) && (
         <p className="text-xs text-muted-foreground">{check.message}</p>
+      )}
+      {check.data_as_of && (
+        <p
+          className={
+            stale
+              ? 'flex items-center gap-1 text-xs text-amber-700 dark:text-amber-400'
+              : 'text-xs text-muted-foreground'
+          }
+        >
+          {stale && <TriangleAlertIcon aria-hidden className="size-3" />}
+          List as of{' '}
+          <time dateTime={check.data_as_of}>{dayFormat.format(new Date(check.data_as_of))}</time>
+          {stale && ' (older than 24 hours)'}
+        </p>
       )}
     </div>
   )
 }
 
-function StatusBadge({ status }: { status: CheckStatus }) {
+function StatusBadge({ status, labels }: { status: CheckStatus; labels: Labels }) {
   if (status === 'OK') {
     return (
       <Badge variant="outline">
         <CircleCheckIcon data-icon="inline-start" className="text-emerald-600 dark:text-emerald-400" />
-        {STATUS_LABELS.OK}
+        {labels.OK}
       </Badge>
     )
   }
@@ -400,18 +483,18 @@ function StatusBadge({ status }: { status: CheckStatus }) {
     return (
       <Badge variant="destructive">
         <CircleXIcon data-icon="inline-start" />
-        {STATUS_LABELS.FINDING}
+        {labels.FINDING}
       </Badge>
     )
   }
   if (status === 'NOT_APPLICABLE') {
     // Not a warning: the source simply does not cover this partner.
-    return <Badge variant="outline">{STATUS_LABELS.NOT_APPLICABLE}</Badge>
+    return <Badge variant="outline">{labels.NOT_APPLICABLE}</Badge>
   }
   return (
     <Badge variant="outline">
       <TriangleAlertIcon data-icon="inline-start" className="text-amber-600 dark:text-amber-400" />
-      {STATUS_LABELS[status]}
+      {labels[status]}
     </Badge>
   )
 }

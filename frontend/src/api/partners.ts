@@ -23,6 +23,7 @@ export type Partner = {
   vat_number: string
   created_at: string
   latest_vies_check: CheckResult | null
+  latest_bmf_check: CheckResult | null
 }
 
 // The backend waits up to 30 s for VIES (3 tries of 8 s), so wait a bit longer here.
@@ -46,4 +47,14 @@ export function runViesCheck(partnerId: string): Promise<CheckResult> {
     { method: 'POST' },
     CHECK_TIMEOUT_MS,
   )
+}
+
+/**
+ * Compare the partner with the BMF list of fake companies (our local copy, so this is fast).
+ * Run it after the VIES check: the company name from VIES is used for the name comparison.
+ */
+export function runBmfCheck(partnerId: string): Promise<CheckResult> {
+  return request<CheckResult>(`/partners/${encodeURIComponent(partnerId)}/checks/bmf`, {
+    method: 'POST',
+  })
 }

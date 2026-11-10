@@ -69,7 +69,8 @@ uv run uvicorn app.main:app --reload   # starts the API on http://localhost:8000
 - Interactive API docs: http://localhost:8000/docs
 - Everything under `/api/v1` needs a sign-in token (otherwise `401`). Use the web app, or see [docs/authentication.md](docs/authentication.md) for calling the API by hand.
 - Run the tests: `uv run pytest` (in `backend`, database must be running). The tests never call the real VIES service.
-- The **Check** button (VIES) needs internet: it asks the EU VIES service. Details: [docs/vies.md](docs/vies.md)
+- The **Check** button needs internet: it asks the EU VIES service, then compares the partner with the BMF list of fake companies. Details: [docs/vies.md](docs/vies.md), [docs/bmf.md](docs/bmf.md)
+- The BMF list is imported in the background a few seconds after the API starts (then every 6 hours). Until then the BMF result is "Error: not imported yet".
 
 ---
 ## Run the frontend (web app)
@@ -111,6 +112,7 @@ lost: admin console → Users → `admin@bizpartnercheck.local` → Credentials 
 - How sign-in works and which settings exist: [docs/authentication.md](docs/authentication.md)
 - Second factor, roles and the security log: [docs/security-log.md](docs/security-log.md)
 - How external sources are connected (result format, time limits, fake sources): [docs/source-adapters.md](docs/source-adapters.md)
+- BMF fake-company list: import, matching and the 24-hour warning: [docs/bmf.md](docs/bmf.md)
 
 ### End-to-end tests (browser)
 **Requirements:** database, Keycloak, backend and frontend are running (see above).
