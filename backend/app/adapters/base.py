@@ -69,7 +69,9 @@ class Scenario(StrEnum):
 class CheckSubject:
     """What we know about the partner; each source uses what it needs."""
 
-    vat_number: str
+    # Missing for partners added by company register number only (S3.1); sources
+    # that need it (VIES) are not asked for such partners.
+    vat_number: str | None
     name: str | None = None
     register_number: str | None = None
 

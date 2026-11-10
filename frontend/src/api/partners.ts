@@ -20,7 +20,10 @@ export type CheckResult = {
 
 export type Partner = {
   id: string
-  vat_number: string
+  /** Null if the partner was added by company register number only. */
+  vat_number: string | null
+  /** Austrian company register number (Firmenbuchnummer), e.g. "123456a". */
+  company_register_number: string | null
   created_at: string
   latest_vies_check: CheckResult | null
   latest_bmf_check: CheckResult | null
@@ -33,11 +36,26 @@ export function listPartners(): Promise<Partner[]> {
   return request<Partner[]>('/partners')
 }
 
-export function createPartner(vatNumber: string): Promise<Partner> {
+export type NewPartner = {
+  vatNumber?: string
+  companyRegisterNumber?: string
+}
+
+/** At least one of the two numbers is needed; empty ones are not sent. */
+export function createPartner({ vatNumber, companyRegisterNumber }: NewPartner): Promise<Partner> {
   return request<Partner>('/partners', {
     method: 'POST',
-    body: JSON.stringify({ vat_number: vatNumber }),
+    body: JSON.stringify({
+      vat_number: vatNumber || null,
+      company_register_number: companyRegisterNumber || null,
+    }),
   })
+}
+
+/** How a partner is shown in short texts: VAT number, otherwise "FN 123456a". */
+export function partnerLabel(partner: Partner): string {
+  if (partner.vat_number) return partner.vat_number
+  return `FN ${partner.company_register_number ?? ''}`
 }
 
 /** Ask VIES now. ERROR is a normal result ("could not confirm"), not a thrown error. */

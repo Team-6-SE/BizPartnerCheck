@@ -1,7 +1,7 @@
 """create bmf list tables
 
 Revision ID: 28c8865b2eef
-Revises: b7c1e2d4a9f0
+Revises: c4e8a1f2b3d5
 Create Date: 2026-11-09 19:30:39.063012
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '28c8865b2eef'
-down_revision: Union[str, Sequence[str], None] = 'b7c1e2d4a9f0'
+down_revision: Union[str, Sequence[str], None] = 'c4e8a1f2b3d5'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

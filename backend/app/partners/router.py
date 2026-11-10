@@ -16,6 +16,7 @@ from app.adapters.vies import get_vies_adapter
 from app.db.models import CheckResult, Partner
 from app.db.session import get_db
 from app.errors import api_error
+from app.partners.register import InvalidRegisterNumber, validate_register_number
 from app.partners.vat import InvalidVatNumber, validate_vat_number
 from app.tenancy import get_current_organization_id
 
@@ -27,11 +28,15 @@ Vies = Annotated[SourceAdapter, Depends(get_vies_adapter)]
 Bmf = Annotated[SourceAdapter, Depends(get_bmf_adapter)]
 
 UNIQUE_VAT_CONSTRAINT = "uq_partners_organization_vat"
+UNIQUE_REGISTER_CONSTRAINT = "uq_partners_organization_register"
 
 
 class PartnerCreate(BaseModel):
-    vat_number: str
+    """A partner needs a VAT number, a company register number, or both."""
 
+    vat_number: str | None = None
+    # Austrian company register number (Firmenbuchnummer), e.g. "FN 123456a".
+    company_register_number: str | None = None
 
 class CheckRead(BaseModel):
     id: uuid.UUID
@@ -72,13 +77,14 @@ class PartnerRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
-    vat_number: str
+    vat_number: str | None
+    company_register_number: str | None
     created_at: datetime
     latest_vies_check: CheckRead | None = None
     latest_bmf_check: CheckRead | None = None
 
 
-def _duplicate(vat_number: str) -> HTTPException:
+def _duplicate_vat(vat_number: str) -> HTTPException:
     return api_error(
         status.HTTP_409_CONFLICT,
         "duplicate_partner",
@@ -87,30 +93,85 @@ def _duplicate(vat_number: str) -> HTTPException:
     )
 
 
+def _duplicate_register(register_number: str) -> HTTPException:
+    return api_error(
+        status.HTTP_409_CONFLICT,
+        "duplicate_partner",
+        f"A partner with company register number FN {register_number} already exists.",
+        field="company_register_number",
+    )
+
+
+def _blank(value: str | None) -> bool:
+    return value is None or not value.strip()
+
+
+def _validated_identifiers(body: PartnerCreate) -> tuple[str | None, str | None]:
+    """Normalised VAT number and company register number, or a 422 naming the field."""
+    if _blank(body.vat_number) and _blank(body.company_register_number):
+        raise api_error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "missing_identifier",
+            "Please enter a VAT number (e.g. ATU12345678) "
+            "or a company register number (e.g. 123456a).",
+            field="vat_number",
+        )
+
+    vat_number = None
+    if not _blank(body.vat_number):
+        try:
+            vat_number = validate_vat_number(body.vat_number or "")
+        except InvalidVatNumber as exc:
+            raise api_error(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                "invalid_vat_format",
+                str(exc),
+                field="vat_number",
+            ) from exc
+
+    register_number = None
+    if not _blank(body.company_register_number):
+        try:
+            register_number = validate_register_number(
+                body.company_register_number or ""
+            )
+        except InvalidRegisterNumber as exc:
+            raise api_error(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                "invalid_register_number_format",
+                str(exc),
+                field="company_register_number",
+            ) from exc
+
+    return vat_number, register_number
+
+
 @router.post("", response_model=PartnerRead, status_code=status.HTTP_201_CREATED)
 def create_partner(
     body: PartnerCreate, db: DbSession, organization_id: OrganizationId
 ) -> Partner:
-    try:
-        vat_number = validate_vat_number(body.vat_number)
-    except InvalidVatNumber as exc:
-        raise api_error(
-            status.HTTP_422_UNPROCESSABLE_CONTENT,
-            "invalid_vat_format",
-            str(exc),
-            field="vat_number",
-        ) from exc
+    vat_number, register_number = _validated_identifiers(body)
 
-    existing = db.scalar(
+    if vat_number is not None and db.scalar(
         select(Partner.id).where(
             Partner.organization_id == organization_id,
             Partner.vat_number == vat_number,
         )
-    )
-    if existing is not None:
-        raise _duplicate(vat_number)
+    ):
+        raise _duplicate_vat(vat_number)
+    if register_number is not None and db.scalar(
+        select(Partner.id).where(
+            Partner.organization_id == organization_id,
+            Partner.company_register_number == register_number,
+        )
+    ):
+        raise _duplicate_register(register_number)
 
-    partner = Partner(organization_id=organization_id, vat_number=vat_number)
+    partner = Partner(
+        organization_id=organization_id,
+        vat_number=vat_number,
+        company_register_number=register_number,
+    )
     db.add(partner)
     try:
         db.commit()
@@ -119,8 +180,10 @@ def create_partner(
         # Two requests at the same time: the unique constraint catches the second one.
         # Any other integrity problem is a real error and must not look like a duplicate.
         constraint = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
-        if constraint == UNIQUE_VAT_CONSTRAINT:
-            raise _duplicate(vat_number) from exc
+        if constraint == UNIQUE_VAT_CONSTRAINT and vat_number is not None:
+            raise _duplicate_vat(vat_number) from exc
+        if constraint == UNIQUE_REGISTER_CONSTRAINT and register_number is not None:
+            raise _duplicate_register(register_number) from exc
         raise
     db.refresh(partner)
     return partner
@@ -160,6 +223,7 @@ def list_partners(db: DbSession, organization_id: OrganizationId) -> list[Partne
         PartnerRead(
             id=partner.id,
             vat_number=partner.vat_number,
+            company_register_number=partner.company_register_number,
             created_at=partner.created_at,
             latest_vies_check=read(partner, vies.SOURCE),
             latest_bmf_check=read(partner, bmf.SOURCE),
@@ -172,7 +236,10 @@ def list_partners(db: DbSession, organization_id: OrganizationId) -> list[Partne
     "/{partner_id}/checks/vies",
     response_model=CheckRead,
     status_code=status.HTTP_201_CREATED,
-    responses={404: {"description": "Partner not found"}},
+    responses={
+        404: {"description": "Partner not found"},
+        409: {"description": "Partner has no VAT number"},
+    },
 )
 def run_vies_check(
     partner_id: uuid.UUID,
@@ -207,8 +274,9 @@ def run_bmf_check(
     name (from the latest valid VIES check) - a person must look. OK: not on the list.
     ERROR: the list was never imported. The result always carries `data_as_of` (time
     of the last import) and a warning if the list is older than 24 hours.
+    Partners without a VAT number are matched by company register number and name.
     """
-    return _run_check(db, organization_id, partner_id, adapter)
+    return _run_check(db, organization_id, partner_id, adapter, needs_vat_number=False)
 
 
 def _company_name(db: Session, partner_id: uuid.UUID) -> str | None:
@@ -234,8 +302,14 @@ def _run_check(
     organization_id: uuid.UUID,
     partner_id: uuid.UUID,
     adapter: SourceAdapter,
+    *,
+    needs_vat_number: bool = True,
 ) -> CheckRead:
-    """Check one partner against one source and store the common result."""
+    """Check one partner against one source and store the common result.
+
+    Sources that need a VAT number (VIES) refuse partners without one with 409;
+    the BMF list can also match the company register number or the name.
+    """
     partner = db.scalar(
         select(Partner).where(
             Partner.id == partner_id, Partner.organization_id == organization_id
@@ -247,8 +321,18 @@ def _run_check(
             "partner_not_found",
             "This partner does not exist.",
         )
+    if partner.vat_number is None and needs_vat_number:
+        # Added by company register number only: VIES needs a VAT number.
+        raise api_error(
+            status.HTTP_409_CONFLICT,
+            "no_vat_number",
+            f"This partner has no VAT number, so {adapter.source} cannot check it.",
+            field="vat_number",
+        )
     subject = CheckSubject(
-        vat_number=partner.vat_number, name=_company_name(db, partner_id)
+        vat_number=partner.vat_number,
+        register_number=partner.company_register_number,
+        name=_company_name(db, partner_id),
     )
     # End the read transaction: no database connection is held while waiting for the source.
     db.commit()

@@ -115,19 +115,20 @@ class BmfAdapter(SourceAdapter):
         active = BmfListEntry.removed_at.is_(None)
         order = (BmfListEntry.published_on.desc(), BmfListEntry.id)
 
-        by_vat = db.scalars(
-            select(BmfListEntry)
-            .where(
-                active,
-                or_(
-                    BmfListEntry.vat_number == subject.vat_number,
-                    BmfListEntry.ur_number == subject.vat_number,
-                ),
-            )
-            .order_by(*order)
-        ).all()
-        if by_vat:
-            return MATCH_VAT_NUMBER, list(by_vat), len(by_vat)
+        if subject.vat_number:
+            by_vat = db.scalars(
+                select(BmfListEntry)
+                .where(
+                    active,
+                    or_(
+                        BmfListEntry.vat_number == subject.vat_number,
+                        BmfListEntry.ur_number == subject.vat_number,
+                    ),
+                )
+                .order_by(*order)
+            ).all()
+            if by_vat:
+                return MATCH_VAT_NUMBER, list(by_vat), len(by_vat)
 
         if subject.register_number:
             by_register = db.scalars(
@@ -245,6 +246,31 @@ def _stale_warning(raw: dict[str, Any]) -> str:
     )
 
 
+def _compared(raw: dict[str, Any]) -> str:
+    """Which details were compared, e.g. "Compared: VAT number and company name." """
+    checked = raw.get("checked") or {}
+    parts = [
+        label
+        for key, label in (
+            ("vatNumber", "VAT number"),
+            ("registerNumber", "company register number"),
+            ("name", "company name"),
+        )
+        if checked.get(key)
+    ]
+    if len(parts) > 1:
+        listed = ", ".join(parts[:-1]) + " and " + parts[-1]
+    else:
+        listed = parts[0] if parts else "nothing"
+    text = f"Compared: {listed}."
+    if not checked.get("name"):
+        text += (
+            " No company name is known yet, so names were not compared"
+            " (run the VIES check first)."
+        )
+    return text
+
+
 def describe(status: CheckStatus, raw: dict[str, Any]) -> str:
     """One sentence for people: what the result means and what to do."""
     matches = raw.get("matches") or []
@@ -269,18 +295,11 @@ def describe(status: CheckStatus, raw: dict[str, Any]) -> str:
         more = f" and {others - 1} more" if isinstance(others, int) and others > 1 else ""
         text = (
             f"Possible match – please review: {name}{address}{more} is on the BMF list "
-            f"with the same name, but not with this VAT number. "
+            f"with the same name, but not with this partner's numbers. "
             "Please check whether it is the same company."
         )
     elif status == CheckStatus.OK:
-        checked = raw.get("checked") or {}
-        how = (
-            "VAT number and company name were compared."
-            if checked.get("name")
-            else "Only the VAT number was compared, because no company name is known yet "
-            "(run the VIES check first)."
-        )
-        text = f"This partner is not on the BMF list of fake companies. {how}"
+        text = f"This partner is not on the BMF list of fake companies. {_compared(raw)}"
     elif not raw.get("listImportedAt") and "match" in raw:
         return (
             "The BMF list has not been imported yet, so the partner could not be "

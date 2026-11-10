@@ -12,6 +12,7 @@ import {
   ApiError,
   createPartner,
   listPartners,
+  partnerLabel,
   runBmfCheck,
   runViesCheck,
   type CheckResult,
@@ -67,7 +68,10 @@ export function PartnersPage() {
   const [reloadKey, setReloadKey] = useState(0)
 
   const [vatNumber, setVatNumber] = useState('')
-  const [formError, setFormError] = useState('')
+  const [registerNumber, setRegisterNumber] = useState('')
+  // Errors are shown at the field the backend names (code, message, field).
+  const [vatError, setVatError] = useState('')
+  const [registerError, setRegisterError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [announcement, setAnnouncement] = useState('')
   const [newPartnerId, setNewPartnerId] = useState<string | null>(null)
@@ -79,11 +83,15 @@ export function PartnersPage() {
   const checkingRef = useRef(new Set<string>())
 
   const inputRef = useRef<HTMLInputElement>(null)
+  const registerInputRef = useRef<HTMLInputElement>(null)
   // Blocks a second submit (e.g. a fast double Enter) before React re-renders.
   const submittingRef = useRef(false)
   const inputId = useId()
   const hintId = useId()
   const errorId = useId()
+  const registerInputId = useId()
+  const registerHintId = useId()
+  const registerErrorId = useId()
 
   useEffect(() => {
     let cancelled = false
@@ -114,29 +122,41 @@ export function PartnersPage() {
     event.preventDefault()
     if (submittingRef.current) return
 
-    const value = vatNumber.trim()
-    if (!value) {
-      setFormError('Please enter a VAT number, e.g. ATU12345678.')
+        const vat = vatNumber.trim()
+    const register = registerNumber.trim()
+    if (!vat && !register) {
+      setVatError('Please enter a VAT number (e.g. ATU12345678) or a company register number (e.g. 123456a).')
+      setRegisterError('')
       inputRef.current?.focus()
       return
     }
 
     submittingRef.current = true
     setSubmitting(true)
-    setFormError('')
+    setVatError('')
+    setRegisterError('')
+    // Where the cursor goes afterwards: the wrong field, or the first field for the next partner.
+    let focusTarget = inputRef
     try {
-      const partner = await createPartner(value)
+      const partner = await createPartner({ vatNumber: vat, companyRegisterNumber: register })
       setPartners((current) => [partner, ...current])
       setNewPartnerId(partner.id)
       setVatNumber('')
-      setAnnouncement(`Partner ${partner.vat_number} added.`)
+      setRegisterNumber('')
+      setAnnouncement(`Partner ${partnerLabel(partner)} added.`)
     } catch (error) {
-      setFormError(errorMessage(error))
+      if (error instanceof ApiError && error.field === 'company_register_number') {
+        setRegisterError(error.message)
+        focusTarget = registerInputRef
+      } else {
+        setVatError(errorMessage(error))
+      }
     } finally {
       submittingRef.current = false
       setSubmitting(false)
-      inputRef.current?.focus()
+      focusTarget.current?.focus()
     }
+    
   }
 
   async function handleCheck(partner: Partner) {
@@ -145,22 +165,27 @@ export function PartnersPage() {
     checkingRef.current.add(partner.id)
     setCheckingIds(new Set(checkingRef.current))
     setCheckErrors(({ [partner.id]: _old, ...rest }) => rest)
-    setAnnouncement(`Checking ${partner.vat_number} in VIES and the BMF list…`)
+    const label = partnerLabel(partner)
+    // VIES needs a VAT number; the BMF list can also match the company register number.
+    const sources = partner.vat_number ? 'VIES and the BMF list' : 'the BMF list'
+    setAnnouncement(`Checking ${label} in ${sources}…`)
 
     const errors: string[] = []
     const fresh: string[] = []
     const said: string[] = []
     try {
       // VIES first: the BMF check compares the company name that VIES returns.
-      try {
-        const result = await runViesCheck(partner.id)
-        setPartners((current) =>
-          current.map((p) => (p.id === partner.id ? { ...p, latest_vies_check: result } : p)),
-        )
-        fresh.push(result.id)
-        said.push(`VIES: ${STATUS_LABELS[result.status]}.`)
-      } catch (error) {
-        errors.push(`VIES: ${errorMessage(error)}`)
+      if (partner.vat_number) {
+        try {
+          const result = await runViesCheck(partner.id)
+          setPartners((current) =>
+            current.map((p) => (p.id === partner.id ? { ...p, latest_vies_check: result } : p)),
+          )
+          fresh.push(result.id)
+          said.push(`VIES: ${STATUS_LABELS[result.status]}.`)
+        } catch (error) {
+          errors.push(`VIES: ${errorMessage(error)}`)
+        }
       }
       try {
         const result = await runBmfCheck(partner.id)
@@ -174,7 +199,7 @@ export function PartnersPage() {
       }
       setFreshCheckIds(new Set(fresh))
       if (errors.length) setCheckErrors((current) => ({ ...current, [partner.id]: errors }))
-      setAnnouncement(`${partner.vat_number}: ${[...said, ...errors].join(' ')}`)
+      setAnnouncement(`${label}: ${[...said, ...errors].join(' ')}`)
     } finally {
       checkingRef.current.delete(partner.id)
       setCheckingIds(new Set(checkingRef.current))
@@ -196,11 +221,11 @@ export function PartnersPage() {
           <CardDescription>The number is checked for the right format before it is saved.</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} noValidate>
+                    <form onSubmit={handleSubmit} noValidate>
             <FieldGroup>
-              <Field data-invalid={formError ? true : undefined}>
-                <FieldLabel htmlFor={inputId}>VAT number</FieldLabel>
-                <Field orientation="horizontal" className="items-start max-sm:flex-col max-sm:items-stretch">
+              <div className="grid gap-6 sm:grid-cols-2">
+                <Field data-invalid={vatError ? true : undefined}>
+                  <FieldLabel htmlFor={inputId}>VAT number</FieldLabel>
                   <Input
                     ref={inputRef}
                     id={inputId}
@@ -208,26 +233,51 @@ export function PartnersPage() {
                     value={vatNumber}
                     onChange={(event) => {
                       setVatNumber(event.target.value)
-                      if (formError) setFormError('')
+                      if (vatError) setVatError('')
                     }}
                     placeholder="ATU12345678…"
                     autoComplete="off"
                     autoCapitalize="characters"
                     spellCheck={false}
                     className="font-mono tracking-wide"
-                    aria-invalid={formError ? true : undefined}
-                    aria-describedby={formError ? `${hintId} ${errorId}` : hintId}
+                    aria-invalid={vatError ? true : undefined}
+                    aria-describedby={vatError ? `${hintId} ${errorId}` : hintId}
                   />
-                  <Button type="submit" disabled={submitting} className="sm:min-w-32">
-                    {submitting ? <Spinner data-icon="inline-start" /> : <PlusIcon data-icon="inline-start" />}
-                    {submitting ? 'Adding…' : 'Add Partner'}
-                  </Button>
+                  <FieldDescription id={hintId}>
+                    Country code + number, e.g. ATU12345678 or DE123456789.
+                  </FieldDescription>
+                  <FieldError id={errorId}>{vatError}</FieldError>
                 </Field>
-                <FieldDescription id={hintId}>
-                  Country code + number, e.g. ATU12345678 or DE123456789.
-                </FieldDescription>
-                <FieldError id={errorId}>{formError}</FieldError>
-              </Field>
+                <Field data-invalid={registerError ? true : undefined}>
+                  <FieldLabel htmlFor={registerInputId}>Company register number (FN)</FieldLabel>
+                  <Input
+                    ref={registerInputRef}
+                    id={registerInputId}
+                    name="company_register_number"
+                    value={registerNumber}
+                    onChange={(event) => {
+                      setRegisterNumber(event.target.value)
+                      if (registerError) setRegisterError('')
+                    }}
+                    placeholder="FN 123456a…"
+                    autoComplete="off"
+                    spellCheck={false}
+                    className="font-mono tracking-wide"
+                    aria-invalid={registerError ? true : undefined}
+                    aria-describedby={registerError ? `${registerHintId} ${registerErrorId}` : registerHintId}
+                  />
+                  <FieldDescription id={registerHintId}>
+                    Austrian Firmenbuch number: up to 6 digits and a letter, e.g. 123456a.
+                  </FieldDescription>
+                  <FieldError id={registerErrorId}>{registerError}</FieldError>
+                </Field>
+              </div>
+              <div>
+                <Button type="submit" disabled={submitting} className="max-sm:w-full sm:min-w-32">
+                  {submitting ? <Spinner data-icon="inline-start" /> : <PlusIcon data-icon="inline-start" />}
+                  {submitting ? 'Adding…' : 'Add Partner'}
+                </Button>
+              </div>
             </FieldGroup>
           </form>
         </CardContent>
@@ -281,7 +331,7 @@ export function PartnersPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>VAT number</TableHead>
+                  <TableHead>Partner</TableHead>
                   <TableHead>VIES result</TableHead>
                   <TableHead>BMF list</TableHead>
                   <TableHead className="text-right max-xl:hidden">Added</TableHead>
@@ -304,7 +354,21 @@ export function PartnersPage() {
                       className="data-new:animate-row-enter motion-reduce:data-new:animate-row-highlight"
                     >
                       <TableCell className="align-top">
-                        <div className="font-mono tracking-wide">{partner.vat_number}</div>
+                                                {partner.vat_number && (
+                          <div className="font-mono tracking-wide">{partner.vat_number}</div>
+                        )}
+                        {partner.company_register_number && (
+                          <div
+                            className={
+                              partner.vat_number
+                                ? 'font-mono text-xs tracking-wide text-muted-foreground'
+                                : 'font-mono tracking-wide'
+                            }
+                          >
+                            <span className="sr-only">Company register number </span>
+                            FN {partner.company_register_number}
+                          </div>
+                        )}
                         {companyName && (
                           <div className="max-w-56 truncate text-xs text-muted-foreground" title={companyName}>
                             {companyName}
@@ -325,8 +389,10 @@ export function PartnersPage() {
                             labels={STATUS_LABELS}
                             fresh={freshCheckIds.has(check.id)}
                           />
-                        ) : (
+                        ) : partner.vat_number ? (
                           <span className="text-muted-foreground">Not checked yet</span>
+                        ) : (
+                          <span className="text-muted-foreground">No VAT number, VIES does not apply</span>
                         )}
                         {errors?.map((error) => (
                           <p key={error} className="mt-1 text-xs text-destructive">
@@ -380,6 +446,8 @@ function CheckButton({
   onCheck: (partner: Partner) => void
   className?: string
 }) {
+  // Every partner can be checked against the BMF list; VIES only with a VAT number.
+  const sources = partner.vat_number ? 'in VIES and the BMF list' : 'in the BMF list'
   return (
     <Button
       variant="outline"
@@ -394,7 +462,10 @@ function CheckButton({
         : partner.latest_vies_check || partner.latest_bmf_check
           ? 'Check Again'
           : 'Check'}
-      <span className="sr-only"> {partner.vat_number} in VIES and the BMF list</span>
+      <span className="sr-only">
+        {' '}
+        {partnerLabel(partner)} {sources}
+      </span>
     </Button>
   )
 }

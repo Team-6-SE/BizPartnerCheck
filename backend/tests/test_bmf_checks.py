@@ -26,9 +26,14 @@ def import_list(db: Session, hours_ago: float = 1) -> None:
     assert record.status == "SUCCESS"
 
 
-def add_partner(client: TestClient, vat_number: str) -> dict:
-    response = client.post("/api/v1/partners", json={"vat_number": vat_number})
-    assert response.status_code == 201
+def add_partner(
+    client: TestClient, vat_number: str | None, register_number: str | None = None
+) -> dict:
+    response = client.post(
+        "/api/v1/partners",
+        json={"vat_number": vat_number, "company_register_number": register_number},
+    )
+    assert response.status_code == 201, response.text
     return response.json()
 
 
@@ -63,6 +68,43 @@ def test_same_vat_number_is_finding_with_entry_and_date(
     entry = stored.raw_response["matches"][0]
     assert entry["publishedOn"] == "2026-11-03"
     assert entry["registerNumber"] == "123456a"
+
+
+def test_partner_without_vat_number_is_matched_by_register_number(
+    client: TestClient, db: Session
+) -> None:
+    import_list(db)
+    # Added by company register number only (S3.1); "FN 123456 A" is stored as "123456a".
+    partner = add_partner(client, None, "FN 123456 A")
+
+    body = check_bmf(client, partner["id"])
+
+    assert body["status"] == "FINDING"
+    assert "same Firmenbuch number" in body["message"]
+    stored = db.get(CheckResult, uuid.UUID(body["id"]))
+    assert stored is not None
+    assert stored.raw_response["match"] == "REGISTER_NUMBER"
+    assert stored.raw_response["checked"]["vatNumber"] is None
+
+
+def test_partner_without_vat_number_and_no_match_is_ok(
+    client: TestClient, db: Session
+) -> None:
+    import_list(db)
+    partner = add_partner(client, None, "999999z")
+
+    body = check_bmf(client, partner["id"])
+
+    assert body["status"] == "OK"
+    assert "Compared: company register number." in body["message"]
+
+
+def test_register_number_match_with_vat_number_too(client: TestClient, db: Session) -> None:
+    import_list(db)
+    # Another VAT number, but the Firmenbuch number of a listed company.
+    partner = add_partner(client, "ATU44444444", "654321x")
+
+    assert check_bmf(client, partner["id"])["status"] == "FINDING"
 
 
 def test_kennziffer_des_ur_also_matches(client: TestClient, db: Session) -> None:
@@ -111,8 +153,9 @@ def test_no_match_is_ok_and_says_what_was_compared(
     with_name = check_bmf(client, partner["id"])
 
     assert without_name["status"] == with_name["status"] == "OK"
-    assert "Only the VAT number" in without_name["message"]
-    assert "company name were compared" in with_name["message"]
+    assert "Compared: VAT number." in without_name["message"]
+    assert "names were not compared" in without_name["message"]
+    assert "Compared: VAT number and company name." in with_name["message"]
 
 
 def test_name_from_a_fake_vies_answer_is_not_used(
@@ -136,7 +179,9 @@ def test_name_from_a_fake_vies_answer_is_not_used(
 def test_removed_entry_is_not_matched(client: TestClient, db: Session) -> None:
     import_list(db)
     text = SAMPLE.read_bytes().decode("iso-8859-1")
-    shorter = "\n".join(l for l in text.splitlines() if "Muster Scheinbau" not in l)
+    shorter = "\n".join(
+        line for line in text.splitlines() if "Muster Scheinbau" not in line
+    )
     run_import(db, shorter.encode("iso-8859-1"), trigger="schedule")
     partner = add_partner(client, "ATU11111111")
 

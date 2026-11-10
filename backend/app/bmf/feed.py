@@ -21,6 +21,9 @@ from dataclasses import dataclass
 from datetime import date, datetime
 
 from app.bmf.names import normalize_name
+from app.partners.register import (
+    normalize_register_number as _normalize_partner_register_number,
+)
 
 FEED_URL = "https://service.bmf.gv.at/service/allg/lsu/rss_lsu.asp"
 
@@ -91,11 +94,11 @@ def normalize_vat(value: str | None) -> str | None:
 
 
 def normalize_register_number(value: str | None) -> str | None:
-    """'FN 342859 f' -> '342859f'."""
+    """'FN 042859 f' -> '42859f': the same stored form as partners (app/partners/register.py)."""
     if not value:
         return None
-    compact = re.sub(r"\s", "", value).lower().removeprefix("fn")
-    return compact if re.fullmatch(r"\d{1,6}[a-z]", compact) else None
+    compact = _normalize_partner_register_number(value)
+    return compact if re.fullmatch(r"[1-9]\d{0,5}[a-z]", compact, flags=re.ASCII) else None
 
 
 def _address(description: str) -> str | None:
