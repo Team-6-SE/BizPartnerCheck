@@ -69,6 +69,8 @@ uv run uvicorn app.main:app --reload   # starts the API on http://localhost:8000
 - Interactive API docs: http://localhost:8000/docs
 - Everything under `/api/v1` needs a sign-in token (otherwise `401`). Use the web app, or see [docs/authentication.md](docs/authentication.md) for calling the API by hand.
 - Run the tests: `uv run pytest` (in `backend`, database must be running). The tests never call the real VIES service.
+- Lint: `uv run ruff check .` (add `--fix` to fix simple problems automatically)
+- Test coverage: `uv run pytest --cov` (CI fails below 70 %)
 - The **Check** button (VIES) needs internet: it asks the EU VIES service. Details: [docs/vies.md](docs/vies.md)
 
 ---
@@ -88,7 +90,15 @@ Then start it:
 npm run dev        # opens on http://localhost:5173
 ```
 
-The web app calls the backend through `/api`, which the dev server forwards to http://localhost:8000.
+TThe web app calls the backend through `/api`, which the dev server forwards to http://localhost:8000.
+
+Checks (the same ones CI runs):
+
+```powershell
+npm run lint       # oxlint
+npm test           # unit tests (Vitest, files *.test.ts next to the code)
+npm run build      # type check + production build
+```
 
 ---
 ## Sign in (Keycloak)
@@ -140,6 +150,9 @@ The security log test removes the demo admin's authenticator app first (through 
 
 ### Pull requests
 - Every change goes into `main` through a pull request.
+- CI must be green: GitHub blocks the merge until all three required checks pass
+  (**Backend**: Ruff, tests, coverage ≥ 70 % · **Frontend**: oxlint, Vitest, type check, build ·
+  **Dependency audit**: pip-audit, npm audit high/critical).
 - Fill in the PR template (Jira item, what changed, how to test, checklist).
 - Ihor approves before merging.
 - Review comments must be resolved before merging.
@@ -213,6 +226,20 @@ Example commits:
 ```bash
 git add .
 git commit -m "SCRUM-31: add VIES client"
+```
+### Before you push: run the checks
+
+CI runs these on every PR; running them first saves a red PR.
+
+```powershell
+cd backend
+uv run ruff check .
+uv run pytest --cov
+
+cd ..\frontend
+npm run lint
+npm test
+npm run build
 ```
 
 ### 4. Push your branch
