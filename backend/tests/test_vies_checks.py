@@ -182,3 +182,21 @@ def test_old_checks_without_stored_explanation_are_still_explained(
 
     assert check["status"] == "FINDING"
     assert "not valid" in check["message"]
+
+
+def test_partner_without_vat_number_cannot_be_checked_in_vies(
+    client: TestClient, db: Session, fake_vies
+) -> None:
+    response = client.post(
+        "/api/v1/partners", json={"company_register_number": "123456a"}
+    )
+    partner = response.json()
+
+    check = run_check(client, partner["id"])
+
+    assert check.status_code == 409
+    assert check.json()["detail"]["code"] == "no_vat_number"
+    assert check.json()["detail"]["field"] == "vat_number"
+    # VIES was not asked and nothing was stored.
+    assert fake_vies.checked == []
+    assert db.query(CheckResult).count() == 0
