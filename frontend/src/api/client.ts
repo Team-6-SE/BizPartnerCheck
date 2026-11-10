@@ -4,12 +4,14 @@ import { getAccessToken, renewAccessToken, signIn, signedInMomentsAgo } from '@/
 export class ApiError extends Error {
   readonly status: number
   readonly code?: string
+  readonly field?: string
 
-  constructor(message: string, status: number, code?: string) {
+  constructor(message: string, status: number, code?: string, field?: string) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.code = code
+    this.field = field
   }
 }
 
@@ -103,8 +105,8 @@ async function toApiError(response: Response): Promise<ApiError> {
 
   const detail = (body as { detail?: unknown } | null)?.detail
   if (detail && typeof detail === 'object' && 'message' in detail) {
-    const { message, code } = detail as { message: string; code?: string }
-    return new ApiError(message, response.status, code)
+        const { message, code, field } = detail as { message: string; code?: string; field?: string }
+    return new ApiError(message, response.status, code, field)
   }
   if (response.status >= 500) {
     return new ApiError(SERVER_UNAVAILABLE, response.status)
