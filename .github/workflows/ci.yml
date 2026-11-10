@@ -7,7 +7,8 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  backend:
+    name: Backend (lint, tests, coverage)
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -26,13 +27,60 @@ jobs:
       run:
         working-directory: backend
     env:
-        DATABASE_URL: postgresql+psycopg://bizpartner:bizpartner@localhost:5432/bizpartner
+      DATABASE_URL: postgresql+psycopg://bizpartner:bizpartner@localhost:5432/bizpartner
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
       - run: uv python install 3.13
-      - run: uv sync
+      - run: uv sync --locked
+      - name: Lint (Ruff)
+        run: uv run ruff check . --output-format=github
       - run: uv run alembic upgrade head
-      - run: uv run pytest
+      - name: Tests with coverage
+        run: uv run pytest --cov --cov-report=term
+      - name: Coverage summary
+        # Shows the coverage table on the run's summary page of every PR.
+        if: always()
+        run: uv run coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
+  
+  frontend:
+    name: Frontend (lint, unit tests, type check, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Lint (oxlint)
+        run: npm run lint
+      - name: Unit tests (Vitest)
+        run: npm test
+      - name: Type check and production build
+        run: npm run build
+  
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Backend dependencies (pip-audit)
+        working-directory: backend
+        run: |
+          uv export --frozen --no-hashes --no-emit-project -o "$RUNNER_TEMP/requirements.txt"
+          uvx pip-audit -r "$RUNNER_TEMP/requirements.txt" --no-deps --disable-pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Frontend dependencies (npm audit, high and critical)
+        working-directory: frontend
+        run: npm audit --audit-level=high
+        
