@@ -69,6 +69,9 @@ class ViesAdapter(SourceAdapter):
     def query(self, subject: CheckSubject, timeout: float) -> dict[str, Any]:
         """Ask VIES once about a normalised VAT number such as "ATU12345678"."""
         vat_number = subject.vat_number
+        if not vat_number:
+            # The API refuses such partners before; this only guards against bugs.
+            raise ValueError("VIES needs a VAT number")
         country_code, number = vat_number[:2], vat_number[2:]
         url = f"{self.base_url}/ms/{country_code}/vat/{number}"
         with httpx.Client(transport=self._transport) as client:
@@ -112,7 +115,7 @@ class ViesAdapter(SourceAdapter):
         return describe(status, raw)
 
     def sample_answer(self, scenario: Scenario, subject: CheckSubject) -> dict[str, Any]:
-        number = subject.vat_number[2:]
+        number = (subject.vat_number or "")[2:]
         if scenario == Scenario.FINDING:
             return {
                 "isValid": False,

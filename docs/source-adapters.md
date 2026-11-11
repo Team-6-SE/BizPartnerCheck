@@ -29,7 +29,7 @@ Optional: `data_as_of(raw)` for sources whose data is imported (e.g. BMF: time o
 
 | Field | Meaning |
 |---|---|
-| `source` | e.g. `VIES`, `BMF` |
+| `source` | e.g. `VIES`, `BMF` ([bmf.md](bmf.md)) |
 | `status` | `OK`, `FINDING`, `REVIEW`, `NOT_APPLICABLE` or `ERROR` (below) |
 | `explanation` | the sentence from `describe` |
 | `retrieved_at` | when we asked |
