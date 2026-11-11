@@ -9,8 +9,9 @@ from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.adapters import vies
+from app.adapters import bmf, vies
 from app.adapters.base import CheckStatus, CheckSubject, SourceAdapter
+from app.adapters.bmf import get_bmf_adapter
 from app.adapters.vies import get_vies_adapter
 from app.db.models import CheckResult, Partner
 from app.db.session import get_db
@@ -24,6 +25,7 @@ router = APIRouter(prefix="/partners", tags=["partners"])
 DbSession = Annotated[Session, Depends(get_db)]
 OrganizationId = Annotated[uuid.UUID, Depends(get_current_organization_id)]
 Vies = Annotated[SourceAdapter, Depends(get_vies_adapter)]
+Bmf = Annotated[SourceAdapter, Depends(get_bmf_adapter)]
 
 UNIQUE_VAT_CONSTRAINT = "uq_partners_organization_vat"
 UNIQUE_REGISTER_CONSTRAINT = "uq_partners_organization_register"
@@ -79,6 +81,7 @@ class PartnerRead(BaseModel):
     company_register_number: str | None
     created_at: datetime
     latest_vies_check: CheckRead | None = None
+    latest_bmf_check: CheckRead | None = None
 
 
 def _duplicate_vat(vat_number: str) -> HTTPException:
@@ -194,22 +197,27 @@ def list_partners(db: DbSession, organization_id: OrganizationId) -> list[Partne
         .order_by(Partner.created_at.desc(), Partner.id)
     ).all()
 
-    # Latest VIES result per partner (PostgreSQL DISTINCT ON), one query for all.
+    # Latest result per partner and source (PostgreSQL DISTINCT ON), one query for all.
     latest = db.scalars(
         select(CheckResult)
         .join(Partner, CheckResult.partner_id == Partner.id)
         .where(
             Partner.organization_id == organization_id,
-            CheckResult.source == vies.SOURCE,
+            CheckResult.source.in_((vies.SOURCE, bmf.SOURCE)),
         )
         .order_by(
             CheckResult.partner_id,
+            CheckResult.source,
             CheckResult.checked_at.desc(),
             CheckResult.id.desc(),
         )
-        .ext(distinct_on(CheckResult.partner_id))
+        .ext(distinct_on(CheckResult.partner_id, CheckResult.source))
     ).all()
-    latest_by_partner = {result.partner_id: result for result in latest}
+    latest_by = {(result.partner_id, result.source): result for result in latest}
+
+    def read(partner: Partner, source: str) -> CheckRead | None:
+        result = latest_by.get((partner.id, source))
+        return CheckRead.from_result(result) if result else None
 
     return [
         PartnerRead(
@@ -217,11 +225,8 @@ def list_partners(db: DbSession, organization_id: OrganizationId) -> list[Partne
             vat_number=partner.vat_number,
             company_register_number=partner.company_register_number,
             created_at=partner.created_at,
-            latest_vies_check=(
-                CheckRead.from_result(latest_by_partner[partner.id])
-                if partner.id in latest_by_partner
-                else None
-            ),
+            latest_vies_check=read(partner, vies.SOURCE),
+            latest_bmf_check=read(partner, bmf.SOURCE),
         )
         for partner in partners
     ]
@@ -251,13 +256,60 @@ def run_vies_check(
     return _run_check(db, organization_id, partner_id, adapter)
 
 
+@router.post(
+    "/{partner_id}/checks/bmf",
+    response_model=CheckRead,
+    status_code=status.HTTP_201_CREATED,
+    responses={404: {"description": "Partner not found"}},
+)
+def run_bmf_check(
+    partner_id: uuid.UUID,
+    db: DbSession,
+    organization_id: OrganizationId,
+    adapter: Bmf,
+) -> CheckRead:
+    """Compare the partner with the BMF list of fake companies and store the result.
+
+    FINDING: same VAT or Firmenbuch number on the list. REVIEW: only the same company
+    name (from the latest valid VIES check) - a person must look. OK: not on the list.
+    ERROR: the list was never imported. The result always carries `data_as_of` (time
+    of the last import) and a warning if the list is older than 24 hours.
+    Partners without a VAT number are matched by company register number and name.
+    """
+    return _run_check(db, organization_id, partner_id, adapter, needs_vat_number=False)
+
+
+def _company_name(db: Session, partner_id: uuid.UUID) -> str | None:
+    """The registered name from the latest valid VIES check, if there is one."""
+    result = db.scalar(
+        select(CheckResult)
+        .where(
+            CheckResult.partner_id == partner_id,
+            CheckResult.source == vies.SOURCE,
+            CheckResult.status == CheckStatus.OK.value,
+        )
+        .order_by(CheckResult.checked_at.desc(), CheckResult.id.desc())
+        .limit(1)
+    )
+    # Fake VIES names must never be used for a real comparison.
+    if result is None or result.raw_response.get("fake"):
+        return None
+    return vies.company_name(result.raw_response)
+
+
 def _run_check(
     db: Session,
     organization_id: uuid.UUID,
     partner_id: uuid.UUID,
     adapter: SourceAdapter,
+    *,
+    needs_vat_number: bool = True,
 ) -> CheckRead:
-    """Check one partner against one source and store the common result."""
+    """Check one partner against one source and store the common result.
+
+    Sources that need a VAT number (VIES) refuse partners without one with 409;
+    the BMF list can also match the company register number or the name.
+    """
     partner = db.scalar(
         select(Partner).where(
             Partner.id == partner_id, Partner.organization_id == organization_id
@@ -269,7 +321,7 @@ def _run_check(
             "partner_not_found",
             "This partner does not exist.",
         )
-    if partner.vat_number is None:
+    if partner.vat_number is None and needs_vat_number:
         # Added by company register number only: VIES needs a VAT number.
         raise api_error(
             status.HTTP_409_CONFLICT,
@@ -280,6 +332,7 @@ def _run_check(
     subject = CheckSubject(
         vat_number=partner.vat_number,
         register_number=partner.company_register_number,
+        name=_company_name(db, partner_id),
     )
     # End the read transaction: no database connection is held while waiting for the source.
     db.commit()
