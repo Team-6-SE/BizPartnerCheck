@@ -13,7 +13,6 @@ from app.adapters import bmf, vies
 from app.adapters.base import CheckStatus, CheckSubject, SourceAdapter
 from app.adapters.bmf import get_bmf_adapter
 from app.adapters.vies import get_vies_adapter
-from app.db.models import CheckResult, Partner
 from app.db.session import get_db
 from app.errors import api_error
 from app.partners.register import InvalidRegisterNumber, validate_register_number
