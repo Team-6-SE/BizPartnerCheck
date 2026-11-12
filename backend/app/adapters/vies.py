@@ -73,11 +73,27 @@ class ViesAdapter(SourceAdapter):
             # The API refuses such partners before; this only guards against bugs.
             raise ValueError("VIES needs a VAT number")
         country_code, number = vat_number[:2], vat_number[2:]
-        url = f"{self.base_url}/ms/{country_code}/vat/{number}"
+        requester = subject.requester_vat
+        headers = {"Accept": "application/json"}
         with httpx.Client(transport=self._transport) as client:
-            response = client.get(
-                url, headers={"Accept": "application/json"}, timeout=timeout
-            )
+            if requester:
+                response = client.post(
+                    f"{self.base_url}/check-vat-number",
+                    json={
+                        "countryCode": country_code,
+                        "vatNumber": number,
+                        "requesterMemberStateCode": requester[:2],
+                        "requesterNumber": requester[2:],
+                    },
+                    headers=headers,
+                    timeout=timeout,
+                )
+            else:
+                response = client.get(
+                    f"{self.base_url}/ms/{country_code}/vat/{number}",
+                    headers=headers,
+                    timeout=timeout,
+                )
 
         try:
             body = response.json()
@@ -101,7 +117,7 @@ class ViesAdapter(SourceAdapter):
             temporary = http_status >= 500 or http_status == 429
             return Interpretation(CheckStatus.ERROR, try_again=temporary)
 
-        is_valid = raw.get("isValid")
+        is_valid = raw.get("isValid", raw.get("valid"))
         user_error = raw.get("userError")
         if is_valid is True and user_error in (None, "VALID"):
             return Interpretation(CheckStatus.OK)
@@ -113,7 +129,7 @@ class ViesAdapter(SourceAdapter):
 
     def describe(self, status: CheckStatus, raw: dict[str, Any]) -> str:
         return describe(status, raw)
-
+    
     def sample_answer(self, scenario: Scenario, subject: CheckSubject) -> dict[str, Any]:
         number = (subject.vat_number or "")[2:]
         if scenario == Scenario.FINDING:
@@ -123,6 +139,7 @@ class ViesAdapter(SourceAdapter):
                 "name": "---",
                 "address": "---",
                 "vatNumber": number,
+                "requestIdentifier": "FAKE-CONSULT-0001" if subject.requester_vat else "",
             }
         return {
             "isValid": True,
@@ -144,12 +161,22 @@ def error_code(raw: dict[str, Any]) -> str | None:
     return None
 
 
-def company_name(raw: dict[str, Any]) -> str | None:
-    """Registered name from VIES; some countries do not share it ("---")."""
-    name = raw.get("name")
-    if isinstance(name, str) and name.strip() not in ("", "---"):
-        return name.strip()
+def _clean(value: Any) -> str | None:
+    if isinstance(value, str) and value.strip() not in ("", "---"):
+        return value.strip()
     return None
+
+
+def company_name(raw: dict[str, Any]) -> str | None:
+    return _clean(raw.get("name"))
+
+
+def registered_address(raw: dict[str, Any]) -> str | None:
+    return _clean(raw.get("address"))
+
+
+def consultation_number(raw: dict[str, Any]) -> str | None:
+    return _clean(raw.get("requestIdentifier"))
 
 
 _ERROR_MESSAGES = {

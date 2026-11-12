@@ -13,12 +13,12 @@ from app.adapters import bmf, vies
 from app.adapters.base import CheckStatus, CheckSubject, SourceAdapter
 from app.adapters.bmf import get_bmf_adapter
 from app.adapters.vies import get_vies_adapter
-from app.db.models import CheckResult, Partner
 from app.db.session import get_db
 from app.errors import api_error
 from app.partners.register import InvalidRegisterNumber, validate_register_number
 from app.partners.vat import InvalidVatNumber, validate_vat_number
 from app.tenancy import get_current_organization_id
+from app.db.models import CheckResult, Organization, Partner
 
 router = APIRouter(prefix="/partners", tags=["partners"])
 
@@ -49,6 +49,8 @@ class CheckRead(BaseModel):
     company_name: str | None
     # How current the source's data was (imported lists); null for live sources.
     data_as_of: datetime | None = None
+    address: str | None = None
+    consultation_number: str | None = None
 
     @classmethod
     def from_result(cls, result: CheckResult) -> "CheckRead":
@@ -69,6 +71,14 @@ class CheckRead(BaseModel):
                 vies.company_name(result.raw_response)
                 if is_vies and status_ == CheckStatus.OK
                 else None
+            ),
+            address=(
+                vies.registered_address(result.raw_response)
+                if is_vies and status_ == CheckStatus.OK
+                else None
+            ),
+            consultation_number=(
+                vies.consultation_number(result.raw_response) if is_vies else None
             ),
         )
 
@@ -329,10 +339,14 @@ def _run_check(
             f"This partner has no VAT number, so {adapter.source} cannot check it.",
             field="vat_number",
         )
+    requester_vat = db.scalar(
+        select(Organization.vat_number).where(Organization.id == organization_id)
+    )
     subject = CheckSubject(
         vat_number=partner.vat_number,
         register_number=partner.company_register_number,
         name=_company_name(db, partner_id),
+        requester_vat=requester_vat,
     )
     # End the read transaction: no database connection is held while waiting for the source.
     db.commit()
