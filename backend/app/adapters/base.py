@@ -74,7 +74,7 @@ class CheckSubject:
     vat_number: str | None
     name: str | None = None
     register_number: str | None = None
-
+    requester_vat: str | None = None
 
 @dataclass(frozen=True)
 class SourceResult:

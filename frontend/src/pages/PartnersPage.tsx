@@ -347,6 +347,7 @@ export function PartnersPage() {
                   const errors = checkErrors[partner.id]
                   const checking = checkingIds.has(partner.id)
                   const companyName = check?.status === 'OK' ? check.company_name : null
+                  const address = check?.status === 'OK' ? check.address : null
                   return (
                     <TableRow
                       key={partner.id}
@@ -372,6 +373,11 @@ export function PartnersPage() {
                         {companyName && (
                           <div className="max-w-56 truncate text-xs text-muted-foreground" title={companyName}>
                             {companyName}
+                          </div>
+                        )}   
+                        {address && (
+                          <div className="max-w-56 whitespace-pre-line text-xs text-muted-foreground">
+                            {address}
                           </div>
                         )}
                         {/* Small screens: no room for an extra column, so the button sits here. */}
@@ -520,6 +526,11 @@ function CheckResultView({
           {dateFormat.format(new Date(check.checked_at))}
         </time>
       </div>
+      {check.consultation_number && (
+        <p className="text-xs text-muted-foreground">
+          Consultation number <span className="font-mono">{check.consultation_number}</span>
+        </p>
+      )}
       {(check.status !== 'OK' || stale) && (
         <p className="text-xs text-muted-foreground">{check.message}</p>
       )}

@@ -14,6 +14,8 @@ export type CheckResult = {
   /** Explanation for people, e.g. why the check gave ERROR. */
   message: string
   company_name: string | null
+  address: string | null
+  consultation_number: string | null
   /** How current the source's data was (imported lists); null for live sources. */
   data_as_of: string | null
 }
