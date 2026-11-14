@@ -79,7 +79,12 @@ def test_key_is_stable(feed) -> None:
 
 @pytest.mark.parametrize(
     "content",
-    [b"", b"<html><body>Wartungsarbeiten</body></html>", b"<rss><item/></rss>", b"<rss"],
+    [
+        b"",
+        b"<html><body>Wartungsarbeiten</body></html>",
+        b"<rss><item/></rss>",
+        b"<rss",
+    ],
 )
 def test_unreadable_feed_is_an_error(content: bytes) -> None:
     with pytest.raises(FeedError):

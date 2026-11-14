@@ -114,7 +114,9 @@ class ViesAdapter(SourceAdapter):
     def describe(self, status: CheckStatus, raw: dict[str, Any]) -> str:
         return describe(status, raw)
 
-    def sample_answer(self, scenario: Scenario, subject: CheckSubject) -> dict[str, Any]:
+    def sample_answer(
+        self, scenario: Scenario, subject: CheckSubject
+    ) -> dict[str, Any]:
         number = (subject.vat_number or "")[2:]
         if scenario == Scenario.FINDING:
             return {

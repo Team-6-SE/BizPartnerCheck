@@ -33,7 +33,9 @@ def without(content: bytes, name: str) -> bytes:
 
 
 def active(db: Session) -> list[BmfListEntry]:
-    return list(db.scalars(select(BmfListEntry).where(BmfListEntry.removed_at.is_(None))))
+    return list(
+        db.scalars(select(BmfListEntry).where(BmfListEntry.removed_at.is_(None)))
+    )
 
 
 def test_first_import_stores_all_entries(db: Session) -> None:
@@ -44,7 +46,9 @@ def test_first_import_stores_all_entries(db: Session) -> None:
     assert record.entries_added == 6
     assert record.entries_removed == 0
     assert len(active(db)) == 6
-    entry = db.scalar(select(BmfListEntry).where(BmfListEntry.vat_number == "ATU11111111"))
+    entry = db.scalar(
+        select(BmfListEntry).where(BmfListEntry.vat_number == "ATU11111111")
+    )
     assert entry is not None
     assert entry.normalized_name == "muster scheinbau"
     assert entry.first_seen_at == entry.last_seen_at == T0
@@ -68,18 +72,25 @@ def test_entry_no_longer_in_feed_is_marked_not_deleted(db: Session) -> None:
     later = T0 + timedelta(hours=6)
 
     record = run_import(
-        db, without(sample(), "Alpen Trockenbau KG"), trigger="schedule", now=lambda: later
+        db,
+        without(sample(), "Alpen Trockenbau KG"),
+        trigger="schedule",
+        now=lambda: later,
     )
 
     assert record.entries_removed == 1
-    gone = db.scalar(select(BmfListEntry).where(BmfListEntry.name == "Alpen Trockenbau KG"))
+    gone = db.scalar(
+        select(BmfListEntry).where(BmfListEntry.name == "Alpen Trockenbau KG")
+    )
     assert gone is not None and gone.removed_at == later
     assert len(active(db)) == 5
 
 
 def test_entry_back_on_the_list_is_active_again(db: Session) -> None:
     run_import(db, sample(), trigger="schedule", now=lambda: T0)
-    run_import(db, without(sample(), "Alpen Trockenbau KG"), trigger="schedule", now=lambda: T0)
+    run_import(
+        db, without(sample(), "Alpen Trockenbau KG"), trigger="schedule", now=lambda: T0
+    )
 
     record = run_import(db, sample(), trigger="schedule", now=lambda: T0)
 
@@ -91,7 +102,9 @@ def test_entry_back_on_the_list_is_active_again(db: Session) -> None:
     "content",
     [b"<html>maintenance</html>", b'<rss version="2.0"><channel></channel></rss>'],
 )
-def test_failed_import_keeps_the_list_and_is_recorded(db: Session, content: bytes) -> None:
+def test_failed_import_keeps_the_list_and_is_recorded(
+    db: Session, content: bytes
+) -> None:
     run_import(db, sample(), trigger="schedule", now=lambda: T0)
 
     record = run_import(db, content, trigger="manual", started_by="ops@example.com")
@@ -165,13 +178,17 @@ def test_http_error_while_downloading_raises() -> None:
 # --- schedule -------------------------------------------------------------------
 
 
-def test_default_interval_is_well_below_24_hours(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_default_interval_is_well_below_24_hours(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.delenv("BMF_IMPORT_INTERVAL_SECONDS", raising=False)
 
     assert 0 < import_interval() <= 12 * 60 * 60
 
 
-@pytest.mark.parametrize(("value", "expected"), [("0", 0), ("3600", 3600), ("abc", 21600)])
+@pytest.mark.parametrize(
+    ("value", "expected"), [("0", 0), ("3600", 3600), ("abc", 21600)]
+)
 def test_interval_from_environment(
     monkeypatch: pytest.MonkeyPatch, value: str, expected: int
 ) -> None:

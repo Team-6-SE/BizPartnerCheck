@@ -8,7 +8,7 @@ on:
 
 jobs:
   backend:
-    name: Backend (lint, tests, coverage)
+    name: Backend (lint, format, tests, coverage)
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -37,6 +37,8 @@ jobs:
       - run: uv sync --locked
       - name: Lint (Ruff)
         run: uv run ruff check . --output-format=github
+      - name: Format check (Ruff)
+        run: uv run ruff format --check .
       - run: uv run alembic upgrade head
       - name: Tests with coverage
         run: uv run pytest --cov --cov-report=term
@@ -44,7 +46,7 @@ jobs:
         # Shows the coverage table on the run's summary page of every PR.
         if: always()
         run: uv run coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
-  
+
   frontend:
     name: Frontend (lint, unit tests, type check, build)
     runs-on: ubuntu-latest
@@ -65,7 +67,7 @@ jobs:
         run: npm test
       - name: Type check and production build
         run: npm run build
-  
+
   audit:
     name: Dependency audit
     runs-on: ubuntu-latest
@@ -83,4 +85,3 @@ jobs:
       - name: Frontend dependencies (npm audit, high and critical)
         working-directory: frontend
         run: npm audit --audit-level=high
-        
