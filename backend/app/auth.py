@@ -19,6 +19,7 @@ Details: docs/authentication.md
 """
 
 import os
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
@@ -46,6 +47,7 @@ class CurrentUser:
     id: str  # Keycloak user ID ("sub"), stable even if the e-mail changes
     email: str | None
     name: str | None
+    organization_id: uuid.UUID | None = None
     roles: frozenset[str] = frozenset()  # Keycloak realm roles, e.g. "org-admin"
 
 
@@ -115,10 +117,19 @@ class TokenVerifier:
         roles = realm_access.get("roles") if isinstance(realm_access, dict) else None
         if not isinstance(roles, list):
             roles = []  # anything else is not from our Keycloak: no roles
+        organization_claim = claims.get("organization_id")
+        if not isinstance(organization_claim, str):
+         raise TokenError("invalid_token", "The sign-in token is not valid.")
+
+        try:
+            organization_id = uuid.UUID(organization_claim)
+        except ValueError as exc:
+            raise TokenError("invalid_token", "The sign-in token is not valid.") from exc
         return CurrentUser(
             id=claims["sub"],
             email=claims.get("email"),
             name=claims.get("name") or claims.get("preferred_username"),
+            organization_id=organization_id,
             roles=frozenset(role for role in roles if isinstance(role, str)),
         )
 

@@ -99,7 +99,21 @@
             "id.token.claim": "false",
             "introspection.token.claim": "true"
           }
-        }
+        },
+     {
+  "name": "organization-id",
+  "protocol": "openid-connect",
+  "protocolMapper": "oidc-usermodel-attribute-mapper",
+  "consentRequired": false,
+  "config": {
+    "user.attribute": "organization_id",
+    "claim.name": "organization_id",
+    "jsonType.label": "String",
+    "access.token.claim": "true",
+    "id.token.claim": "false",
+    "userinfo.token.claim": "false"
+  }
+}
       ]
     },
     {
@@ -132,6 +146,11 @@
       "firstName": "Demo",
       "lastName": "User",
       "enabled": true,
+      "attributes": {
+  "organization_id": [
+    "00000000-0000-0000-0000-000000000001"
+  ]
+},
       "realmRoles": [
         "default-roles-bizpartnercheck"
       ],
@@ -150,6 +169,11 @@
       "firstName": "Demo",
       "lastName": "Admin",
       "enabled": true,
+      "attributes": {
+  "organization_id": [
+    "00000000-0000-0000-0000-000000000001"
+  ]
+},
       "realmRoles": [
         "default-roles-bizpartnercheck",
         "org-admin",

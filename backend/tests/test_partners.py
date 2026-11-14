@@ -274,3 +274,60 @@ def test_database_refuses_a_partner_without_any_number(db: Session) -> None:
     db.rollback()
 
     assert "ck_partners_identifier" in str(error.value)
+
+
+def test_organizations_cannot_access_each_others_partners(
+    anonymous_client: TestClient, db: Session, tokens
+) -> None:
+    other_org = Organization(name="Isolation test organization")
+    db.add(other_org)
+    db.flush()
+
+    own_partner = Partner(
+        organization_id=TEST_ORGANIZATION_ID,
+        vat_number="ATU11111111",
+    )
+    other_partner = Partner(
+        organization_id=other_org.id,
+        vat_number="ATU22222222",
+    )
+    db.add_all([own_partner, other_partner])
+    db.flush()
+
+    token_a = tokens.make()
+    token_b = tokens.make(
+        extra={"organization_id": str(other_org.id)}
+    )
+
+    headers_a = {"Authorization": f"Bearer {token_a}"}
+    headers_b = {"Authorization": f"Bearer {token_b}"}
+
+    response_a = anonymous_client.get(
+        "/api/v1/partners", headers=headers_a
+    )
+    response_b = anonymous_client.get(
+        "/api/v1/partners", headers=headers_b
+    )
+
+    assert response_a.status_code == 200
+    assert response_b.status_code == 200
+
+    assert {p["id"] for p in response_a.json()} == {
+        str(own_partner.id)
+    }
+    assert {p["id"] for p in response_b.json()} == {
+        str(other_partner.id)
+    }
+
+    for source in ("vies", "bmf"):
+        response = anonymous_client.post(
+            f"/api/v1/partners/{other_partner.id}/checks/{source}",
+            headers=headers_a,
+        )
+        assert response.status_code == 404
+
+        response = anonymous_client.post(
+            f"/api/v1/partners/{own_partner.id}/checks/{source}",
+            headers=headers_b,
+        )
+        assert response.status_code == 404
