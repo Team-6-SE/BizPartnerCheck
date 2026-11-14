@@ -8,6 +8,7 @@ on:
 
 jobs:
   backend:
+    # Keep this name: it is a required status check on main (Settings → Branches).
     name: Backend (lint, tests, coverage)
     runs-on: ubuntu-latest
     services:
@@ -38,7 +39,12 @@ jobs:
       - name: Lint (Ruff)
         run: uv run ruff check . --output-format=github
       - name: Format check (Ruff)
-        run: uv run ruff format --check .
+        # Shows what would change and how to fix it.
+        run: |
+          uv run ruff format --check --diff . || {
+            echo "::error::Python code is not formatted. Run 'uv run ruff format .' in backend, then commit and push."
+            exit 1
+          }
       - run: uv run alembic upgrade head
       - name: Tests with coverage
         run: uv run pytest --cov --cov-report=term

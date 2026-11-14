@@ -70,7 +70,7 @@ uv run uvicorn app.main:app --reload   # starts the API on http://localhost:8000
 - Everything under `/api/v1` needs a sign-in token (otherwise `401`). Use the web app, or see [docs/authentication.md](docs/authentication.md) for calling the API by hand.
 - Run the tests: `uv run pytest` (in `backend`, database must be running). The tests never call the real VIES service.
 - Lint: `uv run ruff check .` (add `--fix` to fix simple problems automatically)
-- Format: `uv run ruff format .` before every commit (CI fails if a file is not formatted)
+- Format: `uv run ruff format .` before you commit. CI fails if a file is not formatted. In VS Code it happens automatically on save (accept the recommended **Ruff** extension). In PyCharm: Settings → Tools → Ruff → "Run on save".
 
 - Test coverage: `uv run pytest --cov` (CI fails below 70 %)
 - The **Check** button needs internet: it asks the EU VIES service, then compares the partner with the BMF list of fake companies. Details: [docs/vies.md](docs/vies.md), [docs/bmf.md](docs/bmf.md)
