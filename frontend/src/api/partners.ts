@@ -24,7 +24,10 @@ export type Partner = {
   vat_number: string | null
   /** Austrian company register number (Firmenbuchnummer), e.g. "123456a". */
   company_register_number: string | null
+  company_name?: string | null
+  is_archived?: boolean
   created_at: string
+  updated_at?: string
   latest_vies_check: CheckResult | null
 }
 
@@ -34,19 +37,56 @@ const CHECK_TIMEOUT_MS = 40_000
 export function listPartners(): Promise<Partner[]> {
   return request<Partner[]>('/partners')
 }
+export function listArchivedPartners(): Promise<Partner[]> {
+  return request<Partner[]>('/partners/archived')
+}
+// Updates the company name of an existing partner.
+export function updatePartner(
+  partnerId: string,
+  companyName: string | null,
+): Promise<Partner> {
+  return request<Partner>(`/partners/${encodeURIComponent(partnerId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      company_name: companyName,
+    }),
+  })
+}
+
+// Archives a partner without deleting its verification history.
+export function archivePartner(partnerId: string): Promise<Partner> {
+  return request<Partner>(
+    `/partners/${encodeURIComponent(partnerId)}/archive`,
+    { method: 'PATCH' },
+  )
+}
+
+// Restores an archived partner to the active directory.
+export function restorePartner(partnerId: string): Promise<Partner> {
+  return request<Partner>(
+    `/partners/${encodeURIComponent(partnerId)}/restore`,
+    { method: 'PATCH' },
+  )
+}
 
 export type NewPartner = {
   vatNumber?: string
   companyRegisterNumber?: string
+   companyName?: string
 }
 
 /** At least one of the two numbers is needed; empty ones are not sent. */
-export function createPartner({ vatNumber, companyRegisterNumber }: NewPartner): Promise<Partner> {
+export function createPartner({
+  vatNumber,
+  companyRegisterNumber,
+  companyName,
+}: NewPartner): Promise<Partner> {
   return request<Partner>('/partners', {
     method: 'POST',
     body: JSON.stringify({
       vat_number: vatNumber || null,
       company_register_number: companyRegisterNumber || null,
+      company_name: companyName || null,
     }),
   })
 }
