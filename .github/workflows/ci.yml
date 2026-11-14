@@ -8,7 +8,7 @@ on:
 
 jobs:
   backend:
-    name: Backend (lint, format, tests, coverage)
+    name: Backend (lint, tests, coverage)
     runs-on: ubuntu-latest
     services:
       postgres:
