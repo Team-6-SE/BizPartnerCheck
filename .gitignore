@@ -1,7 +1,12 @@
 .idea/
-.vscode/
 .DS_Store
 .env
 __pycache__/
-.venv/.coverage
+.venv/
 .coverage
+.ruff_cache/
+
+# VS Code: personal settings stay local, the shared ones below are committed.
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json

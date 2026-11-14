@@ -138,7 +138,9 @@ class SecurityEvent(Base):
     organization_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("organizations.id"), nullable=True
     )
-    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
     event_type: Mapped[str] = mapped_column(String(40), nullable=False)
     # Who did it (Keycloak user ID and e-mail), and whom it concerns (e.g. the changed user).
     actor_id: Mapped[str | None] = mapped_column(String(64))
@@ -146,7 +148,9 @@ class SecurityEvent(Base):
     subject_id: Mapped[str | None] = mapped_column(String(64))
     subject_email: Mapped[str | None] = mapped_column(String(320))
     ip_address: Mapped[str | None] = mapped_column(String(64))
-    source: Mapped[str] = mapped_column(String(20), nullable=False)  # "keycloak" or "app"
+    source: Mapped[str] = mapped_column(
+        String(20), nullable=False
+    )  # "keycloak" or "app"
     external_id: Mapped[str | None] = mapped_column(String(80))
     details: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     recorded_at: Mapped[datetime] = mapped_column(
@@ -184,8 +188,12 @@ class BmfListEntry(Base):
     fake_since: Mapped[date | None] = mapped_column(Date)
     decision_final_on: Mapped[date | None] = mapped_column(Date)
     link: Mapped[str | None] = mapped_column(Text)
-    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
     # Set when the entry is no longer in the feed; such entries are not matched.
     removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -202,8 +210,12 @@ class BmfImport(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    finished_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    finished_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
     status: Mapped[str] = mapped_column(String(10), nullable=False)
     # "schedule" or "manual" (with the e-mail of the admin who started it).
     trigger: Mapped[str] = mapped_column(String(20), nullable=False)

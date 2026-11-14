@@ -75,7 +75,9 @@ class FakeAdapter(SourceAdapter):
     def describe(self, status: CheckStatus, raw: dict[str, Any]) -> str:
         return self.real.describe(status, raw)
 
-    def sample_answer(self, scenario: Scenario, subject: CheckSubject) -> dict[str, Any]:
+    def sample_answer(
+        self, scenario: Scenario, subject: CheckSubject
+    ) -> dict[str, Any]:
         return self.real.sample_answer(scenario, subject)
 
     def data_as_of(self, raw: dict[str, Any]) -> datetime | None:
@@ -101,7 +103,9 @@ def adapter_setting(
         except ValueError:
             pass
     choices = ", ".join(["real", *(FAKE_PREFIX + s.value for s in Scenario)])
-    raise UnknownAdapterSetting(f"{name}={setting!r} is not known. Use one of: {choices}.")
+    raise UnknownAdapterSetting(
+        f"{name}={setting!r} is not known. Use one of: {choices}."
+    )
 
 
 def check_adapter_settings(
@@ -113,7 +117,7 @@ def check_adapter_settings(
         if scenario is not None:
             logger.warning(
                 "%s: FAKE adapter active (%s_ADAPTER=fake-%s). Results are not real "
-                "and are marked \"fake\": true.",
+                'and are marked "fake": true.',
                 source,
                 source.upper(),
                 scenario.value,

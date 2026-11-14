@@ -141,7 +141,9 @@ class SourceAdapter(ABC):
         """One sentence for people: what the result means and what to do."""
 
     @abstractmethod
-    def sample_answer(self, scenario: Scenario, subject: CheckSubject) -> dict[str, Any]:
+    def sample_answer(
+        self, scenario: Scenario, subject: CheckSubject
+    ) -> dict[str, Any]:
         """A typical raw answer for Scenario.OK and Scenario.FINDING (fake adapters)."""
 
     def data_as_of(self, raw: dict[str, Any]) -> datetime | None:
