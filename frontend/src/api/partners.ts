@@ -30,15 +30,58 @@ export type Partner = {
   updated_at?: string
   latest_vies_check: CheckResult | null
 }
+export type PartnerPage = {
+  items: Partner[]
+  total: number
+  page: number
+  page_size: number
+  total_pages: number
+}
 
 // The backend waits up to 30 s for VIES (3 tries of 8 s), so wait a bit longer here.
 const CHECK_TIMEOUT_MS = 40_000
 
-export function listPartners(): Promise<Partner[]> {
-  return request<Partner[]>('/partners')
+export type PartnerListParams = {
+  search?: string
+  page?: number
+  pageSize?: number
+  sortBy?: string
+  sortOrder?: 'asc' | 'desc'
+}
+
+export function listPartners(
+  params: PartnerListParams = {},
+): Promise<PartnerPage> {
+  const query = new URLSearchParams()
+
+  if (params.search?.trim()) {
+    query.set('search', params.search.trim())
+  }
+
+  query.set('page', String(params.page ?? 1))
+  query.set('page_size', String(params.pageSize ?? 20))
+  query.set('sort_by', params.sortBy ?? 'created_at')
+  query.set('sort_order', params.sortOrder ?? 'desc')
+
+  return request<PartnerPage>(`/partners?${query.toString()}`)
 }
 export function listArchivedPartners(): Promise<Partner[]> {
   return request<Partner[]>('/partners/archived')
+}
+// Retrieves one partner, including its latest VIES result.
+export function getPartner(partnerId: string): Promise<Partner> {
+  return request<Partner>(
+    `/partners/${encodeURIComponent(partnerId)}`,
+  )
+}
+
+// Retrieves all stored checks for one partner, newest first.
+export function listPartnerChecks(
+  partnerId: string,
+): Promise<CheckResult[]> {
+  return request<CheckResult[]>(
+    `/partners/${encodeURIComponent(partnerId)}/checks`,
+  )
 }
 // Updates the company name of an existing partner.
 export function updatePartner(
