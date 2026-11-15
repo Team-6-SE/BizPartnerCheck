@@ -36,6 +36,7 @@ REQUEST_PARTS = {"body", "path", "query", "header", "cookie"}
 API_PREFIX = "/api/v1"
 PUBLIC_API_PATHS = {"/api/v1/registration"}
 
+
 @app.middleware("http")
 async def require_bearer_token(request: Request, call_next):
     """No token, no API: 401 before routing, so unknown paths, wrong methods and broken
@@ -43,9 +44,9 @@ async def require_bearer_token(request: Request, call_next):
     The token itself is checked by get_current_user on every route."""
     path = request.url.path
     if (
-            (path == API_PREFIX or path.startswith(API_PREFIX + "/"))
-            and path not in PUBLIC_API_PATHS
-            and request.method != "OPTIONS"
+        (path == API_PREFIX or path.startswith(API_PREFIX + "/"))
+        and path not in PUBLIC_API_PATHS
+        and request.method != "OPTIONS"
     ):
         scheme, _, token = request.headers.get("authorization", "").partition(" ")
         if scheme.lower() != "bearer" or not token.strip():

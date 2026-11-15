@@ -34,9 +34,7 @@ def check_rate_limit(ip_address: str) -> bool:
     with _rate_limit_lock:
         attempts = _registration_attempts[ip_address]
         attempts[:] = [
-            timestamp
-            for timestamp in attempts
-            if now - timestamp < RATE_WINDOW_SECONDS
+            timestamp for timestamp in attempts if now - timestamp < RATE_WINDOW_SECONDS
         ]
 
         if len(attempts) >= RATE_LIMIT:

@@ -22,17 +22,13 @@ class KeycloakRegistrationClient:
         base_url = os.environ.get("KEYCLOAK_API_BASE_URL") or issuer
 
         self.token_url = f"{base_url}/protocol/openid-connect/token"
-        self.admin_url = base_url.replace(
-            "/realms/", "/admin/realms/", 1
-        )
+        self.admin_url = base_url.replace("/realms/", "/admin/realms/", 1)
 
         self.client_id = (
-            os.environ.get("KEYCLOAK_REGISTRATION_CLIENT_ID")
-            or DEFAULT_CLIENT_ID
+            os.environ.get("KEYCLOAK_REGISTRATION_CLIENT_ID") or DEFAULT_CLIENT_ID
         )
         self.client_secret = (
-            os.environ.get("KEYCLOAK_REGISTRATION_CLIENT_SECRET")
-            or LOCAL_DEV_SECRET
+            os.environ.get("KEYCLOAK_REGISTRATION_CLIENT_SECRET") or LOCAL_DEV_SECRET
         )
 
         self.http = httpx.Client(timeout=10)
@@ -73,9 +69,7 @@ class KeycloakRegistrationClient:
             "requiredActions": ["VERIFY_EMAIL"],
             "firstName": name_parts[0],
             "lastName": name_parts[1] if len(name_parts) > 1 else "",
-            "attributes": {
-                "organization_id": [str(organization_id)]
-            },
+            "attributes": {"organization_id": [str(organization_id)]},
         }
 
         try:

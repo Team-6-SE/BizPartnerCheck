@@ -49,12 +49,8 @@ def test_successful_registration(anonymous_client, db, fake_keycloak):
     assert "verification" in response.json()["message"].lower()
 
     fake_keycloak.create_user.assert_called_once()
-    fake_keycloak.assign_org_admin_role.assert_called_once_with(
-        "test-user-id"
-    )
-    fake_keycloak.send_verification_email.assert_called_once_with(
-        "test-user-id"
-    )
+    fake_keycloak.assign_org_admin_role.assert_called_once_with("test-user-id")
+    fake_keycloak.send_verification_email.assert_called_once_with("test-user-id")
 
 
 def test_duplicate_email_is_rejected(anonymous_client, fake_keycloak):
@@ -98,9 +94,7 @@ def test_rate_limit_blocks_sixth_attempt(anonymous_client, fake_keycloak):
     for number in range(6):
         response = anonymous_client.post(
             "/api/v1/registration",
-            json=registration_data(
-                website=f"bot-{number}.example"
-            ),
+            json=registration_data(website=f"bot-{number}.example"),
         )
         responses.append(response.status_code)
 
