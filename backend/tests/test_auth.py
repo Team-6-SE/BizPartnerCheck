@@ -395,10 +395,11 @@ def test_token_without_organization_is_rejected(
 
     assert_401(response, "invalid_token")
 
+
 def test_token_with_invalid_organization_is_rejected(
     anonymous_client: TestClient, tokens
 ) -> None:
-     token = tokens.make(extra={"organization_id": "not-a-valid-uuid"})
-     response = call(anonymous_client, "GET", "/api/v1/me", token)
+    token = tokens.make(extra={"organization_id": "not-a-valid-uuid"})
+    response = call(anonymous_client, "GET", "/api/v1/me", token)
 
-     assert_401(response, "invalid_token")
+    assert_401(response, "invalid_token")

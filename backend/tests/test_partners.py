@@ -293,29 +293,19 @@ def test_organizations_cannot_access_each_others_partners(
     db.flush()
 
     token_a = tokens.make()
-    token_b = tokens.make(
-        extra={"organization_id": str(other_org.id)}
-    )
+    token_b = tokens.make(extra={"organization_id": str(other_org.id)})
 
     headers_a = {"Authorization": f"Bearer {token_a}"}
     headers_b = {"Authorization": f"Bearer {token_b}"}
 
-    response_a = anonymous_client.get(
-        "/api/v1/partners", headers=headers_a
-    )
-    response_b = anonymous_client.get(
-        "/api/v1/partners", headers=headers_b
-    )
+    response_a = anonymous_client.get("/api/v1/partners", headers=headers_a)
+    response_b = anonymous_client.get("/api/v1/partners", headers=headers_b)
 
     assert response_a.status_code == 200
     assert response_b.status_code == 200
 
-    assert {p["id"] for p in response_a.json()} == {
-        str(own_partner.id)
-    }
-    assert {p["id"] for p in response_b.json()} == {
-        str(other_partner.id)
-    }
+    assert {p["id"] for p in response_a.json()} == {str(own_partner.id)}
+    assert {p["id"] for p in response_b.json()} == {str(other_partner.id)}
 
     for source in ("vies", "bmf"):
         response = anonymous_client.post(
