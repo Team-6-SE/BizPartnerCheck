@@ -14,6 +14,7 @@ from app.bmf.background import bmf_import_schedule
 from app.bmf.router import router as bmf_admin_router
 from app.errors import error_body
 from app.partners.router import router as partners_router
+from app.registration.router import router as registration_router
 from app.security.background import security_event_sync
 from app.security.router import router as security_router
 
@@ -33,7 +34,7 @@ app = FastAPI(title="BizPartnerCheck API", version="0.1.0", lifespan=lifespan)
 
 REQUEST_PARTS = {"body", "path", "query", "header", "cookie"}
 API_PREFIX = "/api/v1"
-
+PUBLIC_API_PATHS = {"/api/v1/registration"}
 
 @app.middleware("http")
 async def require_bearer_token(request: Request, call_next):
@@ -42,8 +43,10 @@ async def require_bearer_token(request: Request, call_next):
     The token itself is checked by get_current_user on every route."""
     path = request.url.path
     if (
-        path == API_PREFIX or path.startswith(API_PREFIX + "/")
-    ) and request.method != "OPTIONS":
+            (path == API_PREFIX or path.startswith(API_PREFIX + "/"))
+            and path not in PUBLIC_API_PATHS
+            and request.method != "OPTIONS"
+    ):
         scheme, _, token = request.headers.get("authorization", "").partition(" ")
         if scheme.lower() != "bearer" or not token.strip():
             return JSONResponse(
@@ -119,6 +122,7 @@ def me(user: AuthenticatedUser) -> dict[str, str | None | list[str]]:
 
 
 app.include_router(api)
+app.include_router(registration_router)
 
 
 @app.get("/health", tags=["system"])

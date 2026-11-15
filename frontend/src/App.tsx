@@ -21,6 +21,9 @@ const OrganizationsPage = lazy(() => import('@/pages/OrganizationsPage').then((m
 const SecurityLogPage = lazy(() => import('@/pages/SecurityLogPage').then((m) => ({ default: m.SecurityLogPage })))
 const PartnersPage = lazy(() => import('@/pages/PartnersPage').then((m) => ({ default: m.PartnersPage })))
 const SignInPage = lazy(() => import('@/pages/SignInPage').then((m) => ({ default: m.SignInPage })))
+const RegistrationPage = lazy(() =>
+  import('@/pages/RegistrationPage').then((m) => ({ default: m.RegistrationPage })),
+)
 const UsersPage = lazy(() => import('@/pages/UsersPage').then((m) => ({ default: m.UsersPage })))
 
 // Screens from SRS 3.1.1. "Partners" and "Security Log" are connected to the backend so far.
@@ -51,6 +54,7 @@ function App() {
         <Suspense fallback={null}>
           <Routes>
             <Route path="/sign-in" element={<SignInPage />} />
+            <Route path="/register" element={<RegistrationPage />} />
             {/* Keycloak sends the user back here; the code is handled before the router starts. */}
             <Route path="/auth/callback" element={<Navigate to="/" replace />} />
             <Route
