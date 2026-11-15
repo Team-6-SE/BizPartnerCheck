@@ -1,7 +1,7 @@
 """add partner directory fields
 
 Revision ID: 1270515f4b21
-Revises: c4e8a1f2b3d5
+Revises: 28c8865b2eef
 Create Date: 2026-11-10 14:46:15.787462
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '1270515f4b21'
-down_revision: Union[str, Sequence[str], None] = 'c4e8a1f2b3d5'
+down_revision: Union[str, Sequence[str], None] = '28c8865b2eef'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

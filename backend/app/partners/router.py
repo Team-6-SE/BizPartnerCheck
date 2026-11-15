@@ -1,18 +1,18 @@
 import uuid
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-#changed next line
-#from pydantic import BaseModel, ConfigDict
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import asc, desc, func, or_, select
 from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.adapters import vies
+from app.adapters import bmf, vies
 from app.adapters.base import CheckStatus, CheckSubject, SourceAdapter
+from app.adapters.bmf import get_bmf_adapter
 from app.adapters.vies import get_vies_adapter
 from app.db.models import CheckResult, Partner
 from app.db.session import get_db
@@ -26,6 +26,7 @@ router = APIRouter(prefix="/partners", tags=["partners"])
 DbSession = Annotated[Session, Depends(get_db)]
 OrganizationId = Annotated[uuid.UUID, Depends(get_current_organization_id)]
 Vies = Annotated[SourceAdapter, Depends(get_vies_adapter)]
+Bmf = Annotated[SourceAdapter, Depends(get_bmf_adapter)]
 
 UNIQUE_VAT_CONSTRAINT = "uq_partners_organization_vat"
 UNIQUE_REGISTER_CONSTRAINT = "uq_partners_organization_register"
@@ -38,10 +39,13 @@ class PartnerCreate(BaseModel):
     # Austrian company register number (Firmenbuchnummer), e.g. "FN 123456a".
     company_register_number: str | None = None
     company_name: str | None = Field(default=None, max_length=255)
+
+
 class PartnerUpdate(BaseModel):
     """Fields that can be edited for an existing partner."""
 
     company_name: str | None = Field(default=None, max_length=255)
+
 
 class CheckRead(BaseModel):
     id: uuid.UUID
@@ -89,6 +93,7 @@ class PartnerRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     latest_vies_check: CheckRead | None = None
+    latest_bmf_check: CheckRead | None = None
 
 
 class PartnerPage(BaseModel):
@@ -97,6 +102,7 @@ class PartnerPage(BaseModel):
     page: int
     page_size: int
     total_pages: int
+
 
 def _duplicate_vat(vat_number: str) -> HTTPException:
     return api_error(
@@ -185,7 +191,9 @@ def create_partner(
         organization_id=organization_id,
         vat_number=vat_number,
         company_register_number=register_number,
-        company_name=body.company_name.strip() if body.company_name and body.company_name.strip() else None,
+        company_name=body.company_name.strip()
+        if body.company_name and body.company_name.strip()
+        else None,
     )
     db.add(partner)
     try:
@@ -243,58 +251,18 @@ def list_partners(
             )
         )
 
-    total = db.scalar(
-        select(func.count()).select_from(query.subquery())
-    ) or 0
+    total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
 
     sort_column = allowed_sort_fields[sort_by]
     ordering = asc(sort_column) if sort_order == "asc" else desc(sort_column)
 
     partners = db.scalars(
-        query
-        .order_by(ordering, Partner.id)
+        query.order_by(ordering, Partner.id)
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all()
 
-    # Get the latest VIES result only for partners on the current page.
-    page_partner_ids = [partner.id for partner in partners]
-
-    latest = db.scalars(
-        select(CheckResult)
-        .where(
-            CheckResult.partner_id.in_(page_partner_ids),
-            CheckResult.source == vies.SOURCE,
-        )
-        .order_by(
-            CheckResult.partner_id,
-            CheckResult.checked_at.desc(),
-            CheckResult.id.desc(),
-        )
-        .ext(distinct_on(CheckResult.partner_id))
-    ).all()
-
-    latest_by_partner = {
-        result.partner_id: result for result in latest
-    }
-
-    items = [
-        PartnerRead(
-            id=partner.id,
-            vat_number=partner.vat_number,
-            company_register_number=partner.company_register_number,
-            company_name=partner.company_name,
-            is_archived=partner.is_archived,
-            created_at=partner.created_at,
-            updated_at=partner.updated_at,
-            latest_vies_check=(
-                CheckRead.from_result(latest_by_partner[partner.id])
-                if partner.id in latest_by_partner
-                else None
-            ),
-        )
-        for partner in partners
-    ]
+    items = _with_latest_checks(db, partners)
 
     return PartnerPage(
         items=items,
@@ -304,40 +272,30 @@ def list_partners(
         total_pages=(total + page_size - 1) // page_size,
     )
 
-# Returns archived partners belonging to the current organization.
-@router.get("/archived", response_model=list[PartnerRead])
-def list_archived_partners(
-    db: DbSession,
-    organization_id: OrganizationId,
-) -> list[PartnerRead]:
 
-    partners = db.scalars(
-        select(Partner)
-        .where(
-            Partner.organization_id == organization_id,
-            Partner.is_archived.is_(True),
-        )
-        .order_by(Partner.created_at.desc(), Partner.id)
-    ).all()
-
-    # Get the latest VIES result for each archived partner.
+def _with_latest_checks(db: Session, partners: Sequence[Partner]) -> list[PartnerRead]:
+    """The partners with their latest VIES and BMF result (one query for all of them)."""
+    partner_ids = [partner.id for partner in partners]
     latest = db.scalars(
         select(CheckResult)
-        .join(Partner, CheckResult.partner_id == Partner.id)
         .where(
-            Partner.organization_id == organization_id,
-            Partner.is_archived.is_(True),
-            CheckResult.source == vies.SOURCE,
+            CheckResult.partner_id.in_(partner_ids),
+            CheckResult.source.in_((vies.SOURCE, bmf.SOURCE)),
         )
+        # Latest result per partner and source (PostgreSQL DISTINCT ON).
         .order_by(
             CheckResult.partner_id,
+            CheckResult.source,
             CheckResult.checked_at.desc(),
             CheckResult.id.desc(),
         )
-        .ext(distinct_on(CheckResult.partner_id))
+        .ext(distinct_on(CheckResult.partner_id, CheckResult.source))
     ).all()
+    latest_by = {(result.partner_id, result.source): result for result in latest}
 
-    latest_by_partner = {result.partner_id: result for result in latest}
+    def read(partner: Partner, source: str) -> CheckRead | None:
+        result = latest_by.get((partner.id, source))
+        return CheckRead.from_result(result) if result else None
 
     return [
         PartnerRead(
@@ -348,14 +306,29 @@ def list_archived_partners(
             is_archived=partner.is_archived,
             created_at=partner.created_at,
             updated_at=partner.updated_at,
-            latest_vies_check=(
-                CheckRead.from_result(latest_by_partner[partner.id])
-                if partner.id in latest_by_partner
-                else None
-            ),
+            latest_vies_check=read(partner, vies.SOURCE),
+            latest_bmf_check=read(partner, bmf.SOURCE),
         )
         for partner in partners
     ]
+
+
+# Returns archived partners belonging to the current organization.
+@router.get("/archived", response_model=list[PartnerRead])
+def list_archived_partners(
+    db: DbSession,
+    organization_id: OrganizationId,
+) -> list[PartnerRead]:
+    partners = db.scalars(
+        select(Partner)
+        .where(
+            Partner.organization_id == organization_id,
+            Partner.is_archived.is_(True),
+        )
+        .order_by(Partner.created_at.desc(), Partner.id)
+    ).all()
+    return _with_latest_checks(db, partners)
+
 
 @router.get("/{partner_id}", response_model=PartnerRead)
 def get_partner(
@@ -364,48 +337,19 @@ def get_partner(
     organization_id: OrganizationId,
 ) -> PartnerRead:
     """Return one partner belonging to the current organization."""
-
     partner = db.scalar(
         select(Partner).where(
             Partner.id == partner_id,
             Partner.organization_id == organization_id,
         )
     )
-
     if partner is None:
         raise api_error(
             status.HTTP_404_NOT_FOUND,
             "partner_not_found",
             "This partner does not exist.",
         )
-
-    latest_check = db.scalar(
-        select(CheckResult)
-        .where(
-            CheckResult.partner_id == partner_id,
-            CheckResult.source == vies.SOURCE,
-        )
-        .order_by(
-            CheckResult.checked_at.desc(),
-            CheckResult.id.desc(),
-        )
-        .limit(1)
-    )
-
-    return PartnerRead(
-        id=partner.id,
-        vat_number=partner.vat_number,
-        company_register_number=partner.company_register_number,
-        company_name=partner.company_name,
-        is_archived=partner.is_archived,
-        created_at=partner.created_at,
-        updated_at=partner.updated_at,
-        latest_vies_check=(
-            CheckRead.from_result(latest_check)
-            if latest_check is not None
-            else None
-        ),
-    )
+    return _with_latest_checks(db, [partner])[0]
 
 
 @router.get("/{partner_id}/checks", response_model=list[CheckRead])
@@ -440,6 +384,8 @@ def get_partner_checks(
     ).all()
 
     return [CheckRead.from_result(check) for check in checks]
+
+
 # Updates a partner's company name while ensuring it belongs to the current organization.
 # Existing identifiers and verification history remain unchanged.
 @router.patch("/{partner_id}", response_model=PartnerRead)
@@ -477,6 +423,7 @@ def update_partner(
 
     return partner
 
+
 # Archives a partner without deleting its verification history.
 @router.patch("/{partner_id}/archive", response_model=PartnerRead)
 def archive_partner(
@@ -503,6 +450,7 @@ def archive_partner(
     db.refresh(partner)
 
     return partner
+
 
 # Restores an archived partner to the active directory.
 @router.patch("/{partner_id}/restore", response_model=PartnerRead)
@@ -531,6 +479,7 @@ def restore_partner(
 
     return partner
 
+
 @router.post(
     "/{partner_id}/checks/vies",
     response_model=CheckRead,
@@ -555,21 +504,67 @@ def run_vies_check(
     return _run_check(db, organization_id, partner_id, adapter)
 
 
+@router.post(
+    "/{partner_id}/checks/bmf",
+    response_model=CheckRead,
+    status_code=status.HTTP_201_CREATED,
+    responses={404: {"description": "Partner not found"}},
+)
+def run_bmf_check(
+    partner_id: uuid.UUID,
+    db: DbSession,
+    organization_id: OrganizationId,
+    adapter: Bmf,
+) -> CheckRead:
+    """Compare the partner with the BMF list of fake companies and store the result.
+
+    FINDING: same VAT or Firmenbuch number on the list. REVIEW: only the same company
+    name (from the latest valid VIES check) - a person must look. OK: not on the list.
+    ERROR: the list was never imported. The result always carries `data_as_of` (time
+    of the last import) and a warning if the list is older than 24 hours.
+    Partners without a VAT number are matched by company register number and name.
+    """
+    return _run_check(db, organization_id, partner_id, adapter, needs_vat_number=False)
+
+
+def _company_name(db: Session, partner_id: uuid.UUID) -> str | None:
+    """The registered name from the latest valid VIES check, if there is one."""
+    result = db.scalar(
+        select(CheckResult)
+        .where(
+            CheckResult.partner_id == partner_id,
+            CheckResult.source == vies.SOURCE,
+            CheckResult.status == CheckStatus.OK.value,
+        )
+        .order_by(CheckResult.checked_at.desc(), CheckResult.id.desc())
+        .limit(1)
+    )
+    # Fake VIES names must never be used for a real comparison.
+    if result is None or result.raw_response.get("fake"):
+        return None
+    return vies.company_name(result.raw_response)
+
+
 def _run_check(
     db: Session,
     organization_id: uuid.UUID,
     partner_id: uuid.UUID,
     adapter: SourceAdapter,
+    *,
+    needs_vat_number: bool = True,
 ) -> CheckRead:
-    """Check one partner against one source and store the common result."""
+    """Check one partner against one source and store the common result.
+
+    Sources that need a VAT number (VIES) refuse partners without one with 409;
+    the BMF list can also match the company register number or the name.
+    """
     partner = db.scalar(
         select(Partner).where(
-            Partner.id == partner_id, Partner.organization_id == organization_id,
+            Partner.id == partner_id,
+            Partner.organization_id == organization_id,
             Partner.is_archived.is_(False),
         )
-
     )
-
 
     if partner is None:
         raise api_error(
@@ -577,7 +572,7 @@ def _run_check(
             "partner_not_found",
             "This partner does not exist.",
         )
-    if partner.vat_number is None:
+    if partner.vat_number is None and needs_vat_number:
         # Added by company register number only: VIES needs a VAT number.
         raise api_error(
             status.HTTP_409_CONFLICT,
@@ -588,6 +583,7 @@ def _run_check(
     subject = CheckSubject(
         vat_number=partner.vat_number,
         register_number=partner.company_register_number,
+        name=_company_name(db, partner_id),
     )
     # End the read transaction: no database connection is held while waiting for the source.
     db.commit()

@@ -1,0 +1,11 @@
+{
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.fixAll.ruff": "explicit"
+    }
+  },
+  "ruff.nativeServer": "on",
+  "python.defaultInterpreterPath": "${workspaceFolder}/backend/.venv/Scripts/python.exe"
+}

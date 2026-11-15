@@ -109,9 +109,7 @@ def test_list_shows_only_own_partners(client: TestClient, db: Session) -> None:
     response = client.get("/api/v1/partners")
 
     assert response.status_code == 200
-    vat_numbers = [
-        partner["vat_number"] for partner in response.json()["items"]
-    ]
+    vat_numbers = [partner["vat_number"] for partner in response.json()["items"]]
     assert set(vat_numbers) == {"ATU11111111", "ATU22222222"}
 
 
@@ -199,9 +197,7 @@ def test_error_names_the_vat_field_when_both_numbers_are_wrong(
     assert response.json()["detail"]["field"] == "vat_number"
 
 
-def test_duplicate_register_number_is_rejected(
-    client: TestClient, db: Session
-) -> None:
+def test_duplicate_register_number_is_rejected(client: TestClient, db: Session) -> None:
     first = client.post("/api/v1/partners", json={"company_register_number": "123456a"})
     # Same number, written differently: still a duplicate after normalising.
     second = client.post(
@@ -280,6 +276,7 @@ def test_database_refuses_a_partner_without_any_number(db: Session) -> None:
 
 
 # --- Partner search and pagination (UM-126) -------------------------------
+
 
 def test_search_by_company_name_is_case_insensitive(client: TestClient) -> None:
     client.post(
@@ -362,20 +359,14 @@ def test_partner_sorting_ascending_and_descending(client: TestClient) -> None:
     for vat_number in ["ATU33333333", "ATU11111111", "ATU22222222"]:
         client.post("/api/v1/partners", json={"vat_number": vat_number})
 
-    ascending = client.get(
-        "/api/v1/partners?sort_by=vat_number&sort_order=asc"
-    ).json()
+    ascending = client.get("/api/v1/partners?sort_by=vat_number&sort_order=asc").json()
 
     descending = client.get(
         "/api/v1/partners?sort_by=vat_number&sort_order=desc"
     ).json()
 
-    ascending_numbers = [
-        partner["vat_number"] for partner in ascending["items"]
-    ]
-    descending_numbers = [
-        partner["vat_number"] for partner in descending["items"]
-    ]
+    ascending_numbers = [partner["vat_number"] for partner in ascending["items"]]
+    descending_numbers = [partner["vat_number"] for partner in descending["items"]]
 
     assert ascending_numbers == [
         "ATU11111111",
@@ -393,6 +384,7 @@ def test_invalid_sort_field_is_rejected(client: TestClient) -> None:
     response = client.get("/api/v1/partners?sort_by=unknown")
 
     assert response.status_code == 422
+
 
 # --- Partner detail and check history (SCRUM-58) ----------------------------
 
@@ -443,9 +435,7 @@ def test_partner_details_cannot_access_another_organization(
     assert response.status_code == 404
 
 
-def test_partner_check_history_is_newest_first(
-    client: TestClient, db: Session
-) -> None:
+def test_partner_check_history_is_newest_first(client: TestClient, db: Session) -> None:
     created = client.post(
         "/api/v1/partners",
         json={"vat_number": "ATU12345678"},
@@ -491,16 +481,13 @@ def test_partner_check_history_is_newest_first(
 
 
 def test_partner_check_history_not_found(client: TestClient) -> None:
-    response = client.get(
-        f"/api/v1/partners/{uuid.uuid4()}/checks"
-    )
+    response = client.get(f"/api/v1/partners/{uuid.uuid4()}/checks")
 
     assert response.status_code == 404
     assert response.json()["detail"]["code"] == "partner_not_found"
 
-def test_partner_search_with_10000_partners(
-        client: TestClient, db: Session
-) -> None:
+
+def test_partner_search_with_10000_partners(client: TestClient, db: Session) -> None:
     partners = [
         Partner(
             organization_id=TEST_ORGANIZATION_ID,

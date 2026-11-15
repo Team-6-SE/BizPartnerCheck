@@ -37,6 +37,8 @@ LEEWAY_SECONDS = 30
 
 
 ORG_ADMIN_ROLE = "org-admin"
+# Runs the platform for all customers (e.g. data source imports); not a customer role.
+PLATFORM_ADMIN_ROLE = "platform-admin"
 
 
 @dataclass(frozen=True)
@@ -196,4 +198,9 @@ def require_role(role: str, message: str) -> Callable[[CurrentUser], CurrentUser
 OrgAdmin = Annotated[
     CurrentUser,
     Depends(require_role(ORG_ADMIN_ROLE, "Only organisation admins can do this.")),
+]
+
+PlatformAdmin = Annotated[
+    CurrentUser,
+    Depends(require_role(PLATFORM_ADMIN_ROLE, "Only platform admins can do this.")),
 ]

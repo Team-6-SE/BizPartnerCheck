@@ -198,7 +198,9 @@ def test_overall_time_limit_stops_retries() -> None:
         now[0] += 20.0  # every call takes 20 s
         raise httpx.ReadTimeout("timed out")
 
-    adapter, requests = make_adapter(slow, clock=lambda: now[0], limits=Limits(deadline=30.0))
+    adapter, requests = make_adapter(
+        slow, clock=lambda: now[0], limits=Limits(deadline=30.0)
+    )
 
     result = check(adapter, "ATU33864707")
 

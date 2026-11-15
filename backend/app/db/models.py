@@ -1,10 +1,11 @@
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -65,9 +66,7 @@ class Partner(Base):
         String(10), nullable=True
     )
     # Optional company name, editable by the user.
-    company_name: Mapped[str | None] = mapped_column(
-        String(255), nullable=True
-    )
+    company_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Archived partners remain in the database with their check history.
     is_archived: Mapped[bool] = mapped_column(
@@ -154,7 +153,9 @@ class SecurityEvent(Base):
     organization_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("organizations.id"), nullable=True
     )
-    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
     event_type: Mapped[str] = mapped_column(String(40), nullable=False)
     # Who did it (Keycloak user ID and e-mail), and whom it concerns (e.g. the changed user).
     actor_id: Mapped[str | None] = mapped_column(String(64))
@@ -162,9 +163,79 @@ class SecurityEvent(Base):
     subject_id: Mapped[str | None] = mapped_column(String(64))
     subject_email: Mapped[str | None] = mapped_column(String(320))
     ip_address: Mapped[str | None] = mapped_column(String(64))
-    source: Mapped[str] = mapped_column(String(20), nullable=False)  # "keycloak" or "app"
+    source: Mapped[str] = mapped_column(
+        String(20), nullable=False
+    )  # "keycloak" or "app"
     external_id: Mapped[str | None] = mapped_column(String(80))
     details: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     recorded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class BmfListEntry(Base):
+    """One entry of the BMF list of fake companies (Scheinunternehmen, § 8 SBBG).
+
+    The list is copied from the BMF feed by app/bmf/importer.py. Entries are never
+    deleted: when an entry is no longer in the feed, removed_at is set, so older check
+    results can still show what the list said. Details: docs/bmf.md
+    """
+
+    __tablename__ = "bmf_list_entries"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    # Fingerprint of the entry's content; the same entry in the next import has the same key.
+    entry_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    # For name matching: lower case, no legal form, no punctuation (app/bmf/names.py).
+    normalized_name: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    address: Mapped[str | None] = mapped_column(Text)
+    # Normalised like partners.vat_number, e.g. "ATU12345678".
+    vat_number: Mapped[str | None] = mapped_column(String(20), index=True)
+    # Kennziffer des Unternehmensregisters (usually the same as the UID).
+    ur_number: Mapped[str | None] = mapped_column(String(20), index=True)
+    # Firmenbuch number, normalised without spaces, e.g. "342859f".
+    register_number: Mapped[str | None] = mapped_column(String(20), index=True)
+    # Only for individuals (sole traders).
+    birth_date: Mapped[date | None] = mapped_column(Date)
+    published_on: Mapped[date] = mapped_column(Date, nullable=False)
+    # "Zeitpunkt als Scheinunternehmen" and "Rechtskraft Bescheid".
+    fake_since: Mapped[date | None] = mapped_column(Date)
+    decision_final_on: Mapped[date | None] = mapped_column(Date)
+    link: Mapped[str | None] = mapped_column(Text)
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    # Set when the entry is no longer in the feed; such entries are not matched.
+    removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class BmfImport(Base):
+    """One run of the BMF list import (history; the last success decides the data age)."""
+
+    __tablename__ = "bmf_imports"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('SUCCESS', 'FAILED')", name="ck_bmf_imports_status"
+        ),
+        Index("ix_bmf_imports_status_finished_at", "status", "finished_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    finished_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    status: Mapped[str] = mapped_column(String(10), nullable=False)
+    # "schedule" or "manual" (with the e-mail of the admin who started it).
+    trigger: Mapped[str] = mapped_column(String(20), nullable=False)
+    started_by: Mapped[str | None] = mapped_column(String(320))
+    entries_in_feed: Mapped[int | None] = mapped_column()
+    entries_added: Mapped[int | None] = mapped_column()
+    entries_removed: Mapped[int | None] = mapped_column()
+    error: Mapped[str | None] = mapped_column(Text)

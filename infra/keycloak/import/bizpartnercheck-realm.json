@@ -152,7 +152,8 @@
       "enabled": true,
       "realmRoles": [
         "default-roles-bizpartnercheck",
-        "org-admin"
+        "org-admin",
+        "platform-admin"
       ],
       "credentials": [
         {
@@ -179,6 +180,10 @@
       {
         "name": "org-admin",
         "description": "Organisation admin: manages users, API tokens and settings of the own organisation; must use a second factor (S2.6)."
+      },
+      {
+        "name": "platform-admin",
+        "description": "Platform admin (operator of BizPartnerCheck, not a customer): data source imports such as the BMF list (S4.3)."
       }
     ]
   },

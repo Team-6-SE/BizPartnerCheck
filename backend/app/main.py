@@ -7,23 +7,25 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import OperationalError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.adapters import vies
+from app.adapters import bmf, vies
 from app.adapters.fake import check_adapter_settings
 from app.auth import AuthenticatedUser, get_current_user
+from app.bmf.background import bmf_import_schedule
+from app.bmf.router import router as bmf_admin_router
 from app.errors import error_body
 from app.partners.router import router as partners_router
 from app.security.background import security_event_sync
 from app.security.router import router as security_router
 
 # Every external source; their {SOURCE}_ADAPTER settings are checked at startup.
-SOURCES = (vies.SOURCE,)
+SOURCES = (vies.SOURCE, bmf.SOURCE)
 
 
 @contextlib.asynccontextmanager
 async def lifespan(app_: FastAPI) -> AsyncIterator[None]:
     # Stops the start on a wrong {SOURCE}_ADAPTER value instead of failing every check.
     check_adapter_settings(SOURCES)
-    async with security_event_sync(app_):
+    async with security_event_sync(app_), bmf_import_schedule():
         yield
 
 
@@ -102,6 +104,7 @@ def database_unavailable(_request: Request, _exc: OperationalError) -> JSONRespo
 api = APIRouter(prefix="/api/v1", dependencies=[Depends(get_current_user)])
 api.include_router(partners_router)
 api.include_router(security_router)
+api.include_router(bmf_admin_router)
 
 
 @api.get("/me", tags=["account"])

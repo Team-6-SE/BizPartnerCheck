@@ -26,7 +26,9 @@ def test_new_partner_has_no_check_yet(client: TestClient) -> None:
     partner = add_partner(client)
 
     assert partner["latest_vies_check"] is None
-    assert client.get("/api/v1/partners").json()["items"][0]["latest_vies_check"] is None
+    assert (
+        client.get("/api/v1/partners").json()["items"][0]["latest_vies_check"] is None
+    )
 
 
 def test_valid_result_is_returned_and_stored(
@@ -72,7 +74,10 @@ def test_error_result_is_stored_and_explained(
     client: TestClient, db: Session, fake_vies
 ) -> None:
     partner = add_partner(client)
-    fake_vies.answer = {"error": "NO_ANSWER_IN_TIME", "message": "No answer within 8 s."}
+    fake_vies.answer = {
+        "error": "NO_ANSWER_IN_TIME",
+        "message": "No answer within 8 s.",
+    }
 
     response = run_check(client, partner["id"])
 
@@ -94,8 +99,7 @@ def test_list_shows_latest_result_after_reload(client: TestClient, fake_vies) ->
     latest = run_check(client, checked["id"]).json()
 
     partners = {
-        p["vat_number"]: p
-        for p in client.get("/api/v1/partners").json()["items"]
+        p["vat_number"]: p for p in client.get("/api/v1/partners").json()["items"]
     }
 
     assert partners["ATU11111111"]["latest_vies_check"] == latest
@@ -146,9 +150,7 @@ def test_other_organizations_results_are_not_listed(
     db.add(foreign)
     db.flush()
     db.add(
-        CheckResult(
-            partner_id=foreign.id, source="VIES", status="OK", raw_response={}
-        )
+        CheckResult(partner_id=foreign.id, source="VIES", status="OK", raw_response={})
     )
     db.flush()
 

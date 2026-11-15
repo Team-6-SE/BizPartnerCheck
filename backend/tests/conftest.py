@@ -14,11 +14,19 @@ from sqlalchemy.orm import Session
 from app.adapters.base import CheckSubject
 from app.adapters.vies import ViesAdapter, get_vies_adapter
 from app.auth import TokenVerifier, get_token_verifier
-from app.db.models import CheckResult, Partner, SecurityEvent
+from app.db.models import (
+    BmfImport,
+    BmfListEntry,
+    CheckResult,
+    Partner,
+    SecurityEvent,
+)
 from app.db.session import engine, get_db
 
 # No background copying of Keycloak events while testing (app/security/background.py).
 os.environ["SECURITY_EVENTS_SYNC_SECONDS"] = "0"
+# No background import of the BMF list while testing (app/bmf/background.py).
+os.environ["BMF_IMPORT_INTERVAL_SECONDS"] = "0"
 
 from app.main import app
 from app.security.keycloak import get_keycloak_client
@@ -128,7 +136,8 @@ def database_ready() -> None:
             "`docker compose -f infra/docker-compose.yml up -d`.",
             returncode=1,
         )
-    if not {"partners", "check_results", "security_events"} <= set(tables):
+    needed = {"partners", "check_results", "security_events", "bmf_list_entries"}
+    if not needed <= set(tables):
         pytest.exit(
             "The database tables are missing. Run `uv run alembic upgrade head` in `backend`.",
             returncode=1,
@@ -153,6 +162,8 @@ def db(database_ready: None) -> Iterator[Session]:
     )
     session.execute(delete(CheckResult))
     session.execute(delete(Partner))
+    session.execute(delete(BmfListEntry))
+    session.execute(delete(BmfImport))
     # The security log is append-only; this transaction may empty it (it is rolled back).
     session.execute(
         text("SET LOCAL bizpartnercheck.allow_security_event_delete = 'on'")

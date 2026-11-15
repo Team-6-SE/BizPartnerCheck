@@ -69,7 +69,9 @@ class Scenario(StrEnum):
 class CheckSubject:
     """What we know about the partner; each source uses what it needs."""
 
-    vat_number: str
+    # Missing for partners added by company register number only (S3.1); sources
+    # that need it (VIES) are not asked for such partners.
+    vat_number: str | None
     name: str | None = None
     register_number: str | None = None
 
@@ -139,7 +141,9 @@ class SourceAdapter(ABC):
         """One sentence for people: what the result means and what to do."""
 
     @abstractmethod
-    def sample_answer(self, scenario: Scenario, subject: CheckSubject) -> dict[str, Any]:
+    def sample_answer(
+        self, scenario: Scenario, subject: CheckSubject
+    ) -> dict[str, Any]:
         """A typical raw answer for Scenario.OK and Scenario.FINDING (fake adapters)."""
 
     def data_as_of(self, raw: dict[str, Any]) -> datetime | None:

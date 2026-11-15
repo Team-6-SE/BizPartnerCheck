@@ -13,6 +13,7 @@ function partner(fields: Partial<Partner>): Partner {
     company_register_number: null,
     created_at: '2026-11-10T10:00:00Z',
     latest_vies_check: null,
+    latest_bmf_check: null,
     ...fields,
   }
 }
