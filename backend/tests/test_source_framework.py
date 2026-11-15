@@ -169,7 +169,9 @@ class ListSource(SourceAdapter):
     def describe(self, status: CheckStatus, raw: dict[str, Any]) -> str:
         return f"List says {status.value}."
 
-    def sample_answer(self, scenario: Scenario, subject: CheckSubject) -> dict[str, Any]:
+    def sample_answer(
+        self, scenario: Scenario, subject: CheckSubject
+    ) -> dict[str, Any]:
         return {"result": "listed" if scenario == Scenario.FINDING else "clean"}
 
     def data_as_of(self, raw: dict[str, Any]) -> datetime | None:
@@ -330,7 +332,9 @@ def test_startup_check_refuses_unknown_setting() -> None:
         check_adapter_settings(["VIES"], {"VIES_ADAPTER": "fake-okk"})
 
 
-def test_startup_check_warns_about_active_fake(caplog: pytest.LogCaptureFixture) -> None:
+def test_startup_check_warns_about_active_fake(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     with caplog.at_level(logging.WARNING):
         check_adapter_settings(["VIES"], {"VIES_ADAPTER": "fake-finding"})
 

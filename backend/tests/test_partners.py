@@ -196,9 +196,7 @@ def test_error_names_the_vat_field_when_both_numbers_are_wrong(
     assert response.json()["detail"]["field"] == "vat_number"
 
 
-def test_duplicate_register_number_is_rejected(
-    client: TestClient, db: Session
-) -> None:
+def test_duplicate_register_number_is_rejected(client: TestClient, db: Session) -> None:
     first = client.post("/api/v1/partners", json={"company_register_number": "123456a"})
     # Same number, written differently: still a duplicate after normalising.
     second = client.post(

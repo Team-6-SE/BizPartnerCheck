@@ -45,7 +45,9 @@ _LEGAL_FORMS = (
     "bt",
 )
 _LEGAL_FORM_END = re.compile(
-    r"(?:\s+(?:" + "|".join(sorted((re.escape(f) for f in _LEGAL_FORMS), key=len, reverse=True)) + r"))+$"
+    r"(?:\s+(?:"
+    + "|".join(sorted((re.escape(f) for f in _LEGAL_FORMS), key=len, reverse=True))
+    + r"))+$"
 )
 
 _STATE_END = re.compile(r"\s+in\s+(?:liquidation|liqu|abwicklung|konkurs|insolvenz)$")

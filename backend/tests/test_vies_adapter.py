@@ -1,4 +1,5 @@
 """The VIES adapter with fake HTTP answers: no internet needed."""
+
 import json
 from collections.abc import Callable
 
@@ -8,13 +9,13 @@ import pytest
 from app.adapters.base import CheckStatus, CheckSubject, SourceResult
 from app.adapters.limits import Limits
 from app.adapters.vies import (
-       ViesAdapter,
-       company_name,
-       consultation_number,
-       describe,
-       error_code,
-       registered_address,
-   )
+    ViesAdapter,
+    company_name,
+    consultation_number,
+    describe,
+    error_code,
+    registered_address,
+)
 
 BASE_URL = "https://vies.test/rest-api"
 
@@ -39,6 +40,7 @@ INVALID = {
 }
 
 CONSULTED = {**VALID, "requestIdentifier": "WAPIAAAAZ1B2C3D4"}
+
 
 def unavailable(code: str) -> dict:
     # VIES also sends isValid: false when it could not ask the country.
@@ -201,7 +203,9 @@ def test_overall_time_limit_stops_retries() -> None:
         now[0] += 20.0  # every call takes 20 s
         raise httpx.ReadTimeout("timed out")
 
-    adapter, requests = make_adapter(slow, clock=lambda: now[0], limits=Limits(deadline=30.0))
+    adapter, requests = make_adapter(
+        slow, clock=lambda: now[0], limits=Limits(deadline=30.0)
+    )
 
     result = check(adapter, "ATU33864707")
 
@@ -231,6 +235,7 @@ def test_helpers_for_people() -> None:
     assert "did not answer in time" in message
     assert "not confirmed" in message
     assert "not confirmed" in describe(CheckStatus.ERROR, {"something": "new"})
+
 
 def test_address_and_consultation_number_helpers() -> None:
     assert registered_address(VALID) == "Am Brunnen 1\nAT-5330 Fuschl/See"

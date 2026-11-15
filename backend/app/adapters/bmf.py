@@ -143,7 +143,9 @@ class BmfAdapter(SourceAdapter):
         if name:
             condition = (active, BmfListEntry.normalized_name == name)
             total = (
-                db.scalar(select(func.count()).select_from(BmfListEntry).where(*condition))
+                db.scalar(
+                    select(func.count()).select_from(BmfListEntry).where(*condition)
+                )
                 or 0
             )
             if total:
@@ -174,10 +176,16 @@ class BmfAdapter(SourceAdapter):
     def data_as_of(self, raw: dict[str, Any]) -> datetime | None:
         return _datetime(raw.get("listImportedAt"))
 
-    def sample_answer(self, scenario: Scenario, subject: CheckSubject) -> dict[str, Any]:
+    def sample_answer(
+        self, scenario: Scenario, subject: CheckSubject
+    ) -> dict[str, Any]:
         now = self._now()
         answer: dict[str, Any] = {
-            "checked": {"vatNumber": subject.vat_number, "registerNumber": None, "name": None},
+            "checked": {
+                "vatNumber": subject.vat_number,
+                "registerNumber": None,
+                "name": None,
+            },
             "checkedAt": now.isoformat(),
             "listImportedAt": (now - timedelta(hours=1)).isoformat(),
             "entriesOnList": 1708,
@@ -199,7 +207,9 @@ class BmfAdapter(SourceAdapter):
                         "birthDate": None,
                         "publishedOn": (now.date() - timedelta(days=30)).isoformat(),
                         "fakeSince": (now.date() - timedelta(days=400)).isoformat(),
-                        "decisionFinalOn": (now.date() - timedelta(days=40)).isoformat(),
+                        "decisionFinalOn": (
+                            now.date() - timedelta(days=40)
+                        ).isoformat(),
                         "link": None,
                     }
                 ],
@@ -292,14 +302,18 @@ def describe(status: CheckStatus, raw: dict[str, Any]) -> str:
     elif status == CheckStatus.REVIEW:
         address = f" ({first['address']})" if first.get("address") else ""
         others = raw.get("matchCount", len(matches))
-        more = f" and {others - 1} more" if isinstance(others, int) and others > 1 else ""
+        more = (
+            f" and {others - 1} more" if isinstance(others, int) and others > 1 else ""
+        )
         text = (
             f"Possible match – please review: {name}{address}{more} is on the BMF list "
             f"with the same name, but not with this partner's numbers. "
             "Please check whether it is the same company."
         )
     elif status == CheckStatus.OK:
-        text = f"This partner is not on the BMF list of fake companies. {_compared(raw)}"
+        text = (
+            f"This partner is not on the BMF list of fake companies. {_compared(raw)}"
+        )
     elif not raw.get("listImportedAt") and "match" in raw:
         return (
             "The BMF list has not been imported yet, so the partner could not be "

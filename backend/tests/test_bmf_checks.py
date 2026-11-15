@@ -22,7 +22,9 @@ SAMPLE = Path(__file__).parent / "fixtures" / "bmf_feed_sample.xml"
 
 def import_list(db: Session, hours_ago: float = 1) -> None:
     imported = datetime.now(UTC) - timedelta(hours=hours_ago)
-    record = run_import(db, SAMPLE.read_bytes(), trigger="schedule", now=lambda: imported)
+    record = run_import(
+        db, SAMPLE.read_bytes(), trigger="schedule", now=lambda: imported
+    )
     assert record.status == "SUCCESS"
 
 
@@ -99,7 +101,9 @@ def test_partner_without_vat_number_and_no_match_is_ok(
     assert "Compared: company register number." in body["message"]
 
 
-def test_register_number_match_with_vat_number_too(client: TestClient, db: Session) -> None:
+def test_register_number_match_with_vat_number_too(
+    client: TestClient, db: Session
+) -> None:
     import_list(db)
     # Another VAT number, but the Firmenbuch number of a listed company.
     partner = add_partner(client, "ATU44444444", "654321x")
@@ -114,7 +118,9 @@ def test_kennziffer_des_ur_also_matches(client: TestClient, db: Session) -> None
     assert check_bmf(client, partner["id"])["status"] == "FINDING"
 
 
-def test_uid_with_suffix_matches_the_plain_number(client: TestClient, db: Session) -> None:
+def test_uid_with_suffix_matches_the_plain_number(
+    client: TestClient, db: Session
+) -> None:
     import_list(db)
     partner = add_partner(client, "ATU22222222")
 
@@ -292,7 +298,9 @@ def platform_admin(client: TestClient, tokens) -> TestClient:
     return client
 
 
-def test_platform_admin_sees_last_import(platform_admin: TestClient, db: Session) -> None:
+def test_platform_admin_sees_last_import(
+    platform_admin: TestClient, db: Session
+) -> None:
     import_list(db)
 
     body = platform_admin.get("/api/v1/admin/bmf/status").json()
@@ -327,7 +335,9 @@ def test_failed_manual_import_is_shown(platform_admin: TestClient) -> None:
     assert body["last_successful_import"] is None
 
 
-@pytest.mark.parametrize("path", ["/api/v1/admin/bmf/status", "/api/v1/admin/bmf/import"])
+@pytest.mark.parametrize(
+    "path", ["/api/v1/admin/bmf/status", "/api/v1/admin/bmf/import"]
+)
 def test_other_users_may_not_use_the_admin_routes(
     client: TestClient, admin_token: str, path: str
 ) -> None:

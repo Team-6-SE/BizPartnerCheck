@@ -79,7 +79,9 @@ def run_import(
 ) -> BmfImport:
     """Apply a downloaded feed to the stored list and record the run. Commits."""
     started = started_at or now()
-    if not db.scalar(text("SELECT pg_try_advisory_xact_lock(:id)"), {"id": _ADVISORY_LOCK_ID}):
+    if not db.scalar(
+        text("SELECT pg_try_advisory_xact_lock(:id)"), {"id": _ADVISORY_LOCK_ID}
+    ):
         db.rollback()
         raise ImportAlreadyRunning("Another BMF import is running right now.")
 
@@ -143,7 +145,9 @@ def _apply(db: Session, content: bytes, seen_at: datetime) -> ImportResult:
     if not feed.entries:
         raise FeedError("The BMF feed contains no entries; the stored list was kept.")
     if feed.skipped:
-        logger.warning("BMF feed: %d entries without name or date were skipped", feed.skipped)
+        logger.warning(
+            "BMF feed: %d entries without name or date were skipped", feed.skipped
+        )
 
     stored = {entry.entry_key: entry for entry in db.scalars(select(BmfListEntry))}
     active = sum(1 for entry in stored.values() if entry.removed_at is None)
@@ -213,7 +217,9 @@ def import_status(db: Session) -> ImportStatus:
         select(BmfImport).order_by(BmfImport.finished_at.desc()).limit(1)
     )
     active = db.scalar(
-        select(func.count()).select_from(BmfListEntry).where(BmfListEntry.removed_at.is_(None))
+        select(func.count())
+        .select_from(BmfListEntry)
+        .where(BmfListEntry.removed_at.is_(None))
     )
     return ImportStatus(last_success, last_attempt, active or 0)
 
@@ -235,7 +241,12 @@ def download_and_import(
     except httpx.HTTPError as exc:
         message = f"The BMF feed could not be downloaded ({type(exc).__name__})."
         return record_failure(
-            db, message, trigger=trigger, started_by=started_by, started_at=started, now=now
+            db,
+            message,
+            trigger=trigger,
+            started_by=started_by,
+            started_at=started,
+            now=now,
         )
     return run_import(
         db, content, trigger=trigger, started_by=started_by, started_at=started, now=now
