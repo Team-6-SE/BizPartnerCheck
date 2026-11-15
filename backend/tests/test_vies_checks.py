@@ -72,7 +72,10 @@ def test_error_result_is_stored_and_explained(
     client: TestClient, db: Session, fake_vies
 ) -> None:
     partner = add_partner(client)
-    fake_vies.answer = {"error": "NO_ANSWER_IN_TIME", "message": "No answer within 8 s."}
+    fake_vies.answer = {
+        "error": "NO_ANSWER_IN_TIME",
+        "message": "No answer within 8 s.",
+    }
 
     response = run_check(client, partner["id"])
 
@@ -143,9 +146,7 @@ def test_other_organizations_results_are_not_listed(
     db.add(foreign)
     db.flush()
     db.add(
-        CheckResult(
-            partner_id=foreign.id, source="VIES", status="OK", raw_response={}
-        )
+        CheckResult(partner_id=foreign.id, source="VIES", status="OK", raw_response={})
     )
     db.flush()
 

@@ -38,6 +38,7 @@ class PartnerCreate(BaseModel):
     # Austrian company register number (Firmenbuchnummer), e.g. "FN 123456a".
     company_register_number: str | None = None
 
+
 class CheckRead(BaseModel):
     id: uuid.UUID
     source: str

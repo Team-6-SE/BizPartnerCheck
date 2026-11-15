@@ -98,7 +98,9 @@ def normalize_register_number(value: str | None) -> str | None:
     if not value:
         return None
     compact = _normalize_partner_register_number(value)
-    return compact if re.fullmatch(r"[1-9]\d{0,5}[a-z]", compact, flags=re.ASCII) else None
+    return (
+        compact if re.fullmatch(r"[1-9]\d{0,5}[a-z]", compact, flags=re.ASCII) else None
+    )
 
 
 def _address(description: str) -> str | None:
@@ -157,4 +159,6 @@ def parse_feed(content: bytes) -> Feed:
             skipped += 1
         else:
             entries.append(entry)
-    return Feed(entries, skipped, (channel.findtext("lastBuildDate") or "").strip() or None)
+    return Feed(
+        entries, skipped, (channel.findtext("lastBuildDate") or "").strip() or None
+    )
