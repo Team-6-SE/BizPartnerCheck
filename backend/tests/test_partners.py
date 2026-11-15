@@ -271,7 +271,7 @@ def test_database_refuses_a_partner_without_any_number(db: Session) -> None:
         db.flush()
     db.rollback()
 
-    assert "ck_partners_identifier" in str(error.value
+    assert "ck_partners_identifier" in str(error.value)
 
 
 def test_organizations_cannot_access_each_others_partners(
