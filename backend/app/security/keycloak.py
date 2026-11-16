@@ -333,6 +333,14 @@ def map_admin_event(event: dict[str, Any]) -> MappedEvent | None:
     sub_resource = parts[2] if len(parts) > 2 else None
     representation = _json_list_or_dict(event.get("representation"))
     extra: dict[str, Any] = {}
+    if (
+        resource == "USER"
+        and operation == "CREATE"
+        and isinstance(representation, dict)
+    ):
+        attributes = representation.get("attributes")
+        if isinstance(attributes, dict):
+            extra["attributes"] = attributes
 
     event_type: EventType | None = None
     if resource == "USER" and sub_resource is None:
@@ -487,6 +495,17 @@ def _rows(
     client: KeycloakAdminClient, events: Iterable[MappedEvent]
 ) -> list[dict[str, Any]]:
     rows = []
+    organization_by_user: dict[str, uuid.UUID] = {}
+    for event in events:
+        if event.event_type == EventType.USER_CREATED and event.subject_id:
+            attributes = event.details.get("attributes")
+            if isinstance(attributes, dict):
+                values = attributes.get("organization_id")
+                if isinstance(values, list) and len(values) == 1:
+                    try:
+                        organization_by_user[event.subject_id] = uuid.UUID(values[0])
+                    except (ValueError, TypeError, AttributeError):
+                        pass
     for event in events:
         if event.subject_id and not event.subject_email:
             event.subject_email = client.user_email(event.subject_id)
@@ -498,7 +517,8 @@ def _rows(
         rows.append(
             {
                 "id": uuid.uuid4(),
-                "organization_id": client.user_organization_id(owner),
+                "organization_id": organization_by_user.get(owner)
+                or client.user_organization_id(owner),
                 "occurred_at": event.occurred_at,
                 "event_type": event.event_type.value,
                 "actor_id": _cut(event.actor_id, 64),

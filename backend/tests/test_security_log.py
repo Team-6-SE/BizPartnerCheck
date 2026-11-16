@@ -988,3 +988,33 @@ def test_export_uses_filters_and_is_logged(admin: TestClient, db: Session) -> No
         "/api/v1/security-events", params={"event_type": "DATA_EXPORTED"}
     ).json()["items"]
     assert items[0]["actor_email"] == "admin@example.com"
+
+
+def test_deleted_user_keeps_organization(db: Session, keycloak: FakeKeycloak) -> None:
+    keycloak.admin_events_ = [
+        admin_event(
+            "USER",
+            "CREATE",
+            "users/user-1",
+            {
+                "email": "anna@example.com",
+                "attributes": {"organization_id": [str(TEST_ORGANIZATION_ID)]},
+            },
+        ),
+        admin_event("USER", "DELETE", "users/user-1"),
+    ]
+
+    # Simulate a user who no longer exists in Keycloak.
+    keycloak.organizations.pop("user-1", None)
+
+    sync_keycloak_events(db, keycloak)
+
+    rows = stored(db)
+    user_events = [
+        row
+        for row in rows
+        if row.event_type in {EventType.USER_CREATED, EventType.USER_DELETED}
+    ]
+
+    assert len(user_events) == 2
+    assert all(row.organization_id == TEST_ORGANIZATION_ID for row in user_events)
