@@ -24,30 +24,113 @@ export type Partner = {
   vat_number: string | null
   /** Austrian company register number (Firmenbuchnummer), e.g. "123456a". */
   company_register_number: string | null
+  company_name?: string | null
+  is_archived?: boolean
   created_at: string
+  updated_at?: string
   latest_vies_check: CheckResult | null
   latest_bmf_check: CheckResult | null
+}
+export type PartnerPage = {
+  items: Partner[]
+  total: number
+  page: number
+  page_size: number
+  total_pages: number
 }
 
 // The backend waits up to 30 s for VIES (3 tries of 8 s), so wait a bit longer here.
 const CHECK_TIMEOUT_MS = 40_000
 
-export function listPartners(): Promise<Partner[]> {
-  return request<Partner[]>('/partners')
+export type PartnerListParams = {
+  search?: string
+  page?: number
+  pageSize?: number
+  sortBy?: string
+  sortOrder?: 'asc' | 'desc'
+}
+
+export function listPartners(
+  params: PartnerListParams = {},
+): Promise<PartnerPage> {
+  const query = new URLSearchParams()
+
+  if (params.search?.trim()) {
+    query.set('search', params.search.trim())
+  }
+
+  query.set('page', String(params.page ?? 1))
+  query.set('page_size', String(params.pageSize ?? 20))
+  query.set('sort_by', params.sortBy ?? 'created_at')
+  query.set('sort_order', params.sortOrder ?? 'desc')
+
+  return request<PartnerPage>(`/partners?${query.toString()}`)
+}
+export function listArchivedPartners(): Promise<Partner[]> {
+  return request<Partner[]>('/partners/archived')
+}
+// Retrieves one partner, including its latest VIES result.
+export function getPartner(partnerId: string): Promise<Partner> {
+  return request<Partner>(
+    `/partners/${encodeURIComponent(partnerId)}`,
+  )
+}
+
+// Retrieves all stored checks for one partner, newest first.
+export function listPartnerChecks(
+  partnerId: string,
+): Promise<CheckResult[]> {
+  return request<CheckResult[]>(
+    `/partners/${encodeURIComponent(partnerId)}/checks`,
+  )
+}
+// Updates the company name of an existing partner.
+export function updatePartner(
+  partnerId: string,
+  companyName: string | null,
+): Promise<Partner> {
+  return request<Partner>(`/partners/${encodeURIComponent(partnerId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      company_name: companyName,
+    }),
+  })
+}
+
+// Archives a partner without deleting its verification history.
+export function archivePartner(partnerId: string): Promise<Partner> {
+  return request<Partner>(
+    `/partners/${encodeURIComponent(partnerId)}/archive`,
+    { method: 'PATCH' },
+  )
+}
+
+// Restores an archived partner to the active directory.
+export function restorePartner(partnerId: string): Promise<Partner> {
+  return request<Partner>(
+    `/partners/${encodeURIComponent(partnerId)}/restore`,
+    { method: 'PATCH' },
+  )
 }
 
 export type NewPartner = {
   vatNumber?: string
   companyRegisterNumber?: string
+   companyName?: string
 }
 
 /** At least one of the two numbers is needed; empty ones are not sent. */
-export function createPartner({ vatNumber, companyRegisterNumber }: NewPartner): Promise<Partner> {
+export function createPartner({
+  vatNumber,
+  companyRegisterNumber,
+  companyName,
+}: NewPartner): Promise<Partner> {
   return request<Partner>('/partners', {
     method: 'POST',
     body: JSON.stringify({
       vat_number: vatNumber || null,
       company_register_number: companyRegisterNumber || null,
+      company_name: companyName || null,
     }),
   })
 }

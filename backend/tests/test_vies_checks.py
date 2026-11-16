@@ -26,7 +26,9 @@ def test_new_partner_has_no_check_yet(client: TestClient) -> None:
     partner = add_partner(client)
 
     assert partner["latest_vies_check"] is None
-    assert client.get("/api/v1/partners").json()[0]["latest_vies_check"] is None
+    assert (
+        client.get("/api/v1/partners").json()["items"][0]["latest_vies_check"] is None
+    )
 
 
 def test_valid_result_is_returned_and_stored(
@@ -96,7 +98,9 @@ def test_list_shows_latest_result_after_reload(client: TestClient, fake_vies) ->
     fake_vies.answer = INVALID_ANSWER
     latest = run_check(client, checked["id"]).json()
 
-    partners = {p["vat_number"]: p for p in client.get("/api/v1/partners").json()}
+    partners = {
+        p["vat_number"]: p for p in client.get("/api/v1/partners").json()["items"]
+    }
 
     assert partners["ATU11111111"]["latest_vies_check"] == latest
     assert partners["ATU22222222"]["latest_vies_check"] is None
@@ -151,7 +155,7 @@ def test_other_organizations_results_are_not_listed(
     db.flush()
 
     add_partner(client)
-    partners = client.get("/api/v1/partners").json()
+    partners = client.get("/api/v1/partners").json()["items"]
 
     assert [p["vat_number"] for p in partners] == ["ATU12345678"]
     assert partners[0]["latest_vies_check"] is None
@@ -179,7 +183,7 @@ def test_old_checks_without_stored_explanation_are_still_explained(
     )
     db.flush()
 
-    check = client.get("/api/v1/partners").json()[0]["latest_vies_check"]
+    check = client.get("/api/v1/partners").json()["items"][0]["latest_vies_check"]
 
     assert check["status"] == "FINDING"
     assert "not valid" in check["message"]

@@ -1,10 +1,11 @@
 import uuid
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import asc, desc, func, or_, select
 from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -37,6 +38,13 @@ class PartnerCreate(BaseModel):
     vat_number: str | None = None
     # Austrian company register number (Firmenbuchnummer), e.g. "FN 123456a".
     company_register_number: str | None = None
+    company_name: str | None = Field(default=None, max_length=255)
+
+
+class PartnerUpdate(BaseModel):
+    """Fields that can be edited for an existing partner."""
+
+    company_name: str | None = Field(default=None, max_length=255)
 
 
 class CheckRead(BaseModel):
@@ -80,9 +88,20 @@ class PartnerRead(BaseModel):
     id: uuid.UUID
     vat_number: str | None
     company_register_number: str | None
+    company_name: str | None
+    is_archived: bool
     created_at: datetime
+    updated_at: datetime
     latest_vies_check: CheckRead | None = None
     latest_bmf_check: CheckRead | None = None
+
+
+class PartnerPage(BaseModel):
+    items: list[PartnerRead]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
 
 
 def _duplicate_vat(vat_number: str) -> HTTPException:
@@ -172,6 +191,9 @@ def create_partner(
         organization_id=organization_id,
         vat_number=vat_number,
         company_register_number=register_number,
+        company_name=body.company_name.strip()
+        if body.company_name and body.company_name.strip()
+        else None,
     )
     db.add(partner)
     try:
@@ -190,22 +212,77 @@ def create_partner(
     return partner
 
 
-@router.get("", response_model=list[PartnerRead])
-def list_partners(db: DbSession, organization_id: OrganizationId) -> list[PartnerRead]:
+@router.get("", response_model=PartnerPage)
+def list_partners(
+    db: DbSession,
+    organization_id: OrganizationId,
+    search: str | None = Query(default=None, max_length=255),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    sort_by: str = Query(default="created_at"),
+    sort_order: str = Query(default="desc", pattern="^(asc|desc)$"),
+) -> PartnerPage:
+
+    allowed_sort_fields = {
+        "company_name": Partner.company_name,
+        "vat_number": Partner.vat_number,
+        "company_register_number": Partner.company_register_number,
+        "created_at": Partner.created_at,
+    }
+
+    if sort_by not in allowed_sort_fields:
+        raise HTTPException(
+            status_code=422,
+            detail="Invalid sort field.",
+        )
+
+    query = select(Partner).where(
+        Partner.organization_id == organization_id,
+        Partner.is_archived.is_(False),
+    )
+
+    if search and search.strip():
+        term = f"%{search.strip()}%"
+        query = query.where(
+            or_(
+                Partner.company_name.ilike(term),
+                Partner.vat_number.ilike(term),
+                Partner.company_register_number.ilike(term),
+            )
+        )
+
+    total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
+
+    sort_column = allowed_sort_fields[sort_by]
+    ordering = asc(sort_column) if sort_order == "asc" else desc(sort_column)
+
     partners = db.scalars(
-        select(Partner)
-        .where(Partner.organization_id == organization_id)
-        .order_by(Partner.created_at.desc(), Partner.id)
+        query.order_by(ordering, Partner.id)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
     ).all()
 
-    # Latest result per partner and source (PostgreSQL DISTINCT ON), one query for all.
+    items = _with_latest_checks(db, partners)
+
+    return PartnerPage(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=(total + page_size - 1) // page_size,
+    )
+
+
+def _with_latest_checks(db: Session, partners: Sequence[Partner]) -> list[PartnerRead]:
+    """The partners with their latest VIES and BMF result (one query for all of them)."""
+    partner_ids = [partner.id for partner in partners]
     latest = db.scalars(
         select(CheckResult)
-        .join(Partner, CheckResult.partner_id == Partner.id)
         .where(
-            Partner.organization_id == organization_id,
+            CheckResult.partner_id.in_(partner_ids),
             CheckResult.source.in_((vies.SOURCE, bmf.SOURCE)),
         )
+        # Latest result per partner and source (PostgreSQL DISTINCT ON).
         .order_by(
             CheckResult.partner_id,
             CheckResult.source,
@@ -225,12 +302,182 @@ def list_partners(db: DbSession, organization_id: OrganizationId) -> list[Partne
             id=partner.id,
             vat_number=partner.vat_number,
             company_register_number=partner.company_register_number,
+            company_name=partner.company_name,
+            is_archived=partner.is_archived,
             created_at=partner.created_at,
+            updated_at=partner.updated_at,
             latest_vies_check=read(partner, vies.SOURCE),
             latest_bmf_check=read(partner, bmf.SOURCE),
         )
         for partner in partners
     ]
+
+
+# Returns archived partners belonging to the current organization.
+@router.get("/archived", response_model=list[PartnerRead])
+def list_archived_partners(
+    db: DbSession,
+    organization_id: OrganizationId,
+) -> list[PartnerRead]:
+    partners = db.scalars(
+        select(Partner)
+        .where(
+            Partner.organization_id == organization_id,
+            Partner.is_archived.is_(True),
+        )
+        .order_by(Partner.created_at.desc(), Partner.id)
+    ).all()
+    return _with_latest_checks(db, partners)
+
+
+@router.get("/{partner_id}", response_model=PartnerRead)
+def get_partner(
+    partner_id: uuid.UUID,
+    db: DbSession,
+    organization_id: OrganizationId,
+) -> PartnerRead:
+    """Return one partner belonging to the current organization."""
+    partner = db.scalar(
+        select(Partner).where(
+            Partner.id == partner_id,
+            Partner.organization_id == organization_id,
+        )
+    )
+    if partner is None:
+        raise api_error(
+            status.HTTP_404_NOT_FOUND,
+            "partner_not_found",
+            "This partner does not exist.",
+        )
+    return _with_latest_checks(db, [partner])[0]
+
+
+@router.get("/{partner_id}/checks", response_model=list[CheckRead])
+def get_partner_checks(
+    partner_id: uuid.UUID,
+    db: DbSession,
+    organization_id: OrganizationId,
+) -> list[CheckRead]:
+    """Return all stored checks for one partner, newest first."""
+
+    partner = db.scalar(
+        select(Partner.id).where(
+            Partner.id == partner_id,
+            Partner.organization_id == organization_id,
+        )
+    )
+
+    if partner is None:
+        raise api_error(
+            status.HTTP_404_NOT_FOUND,
+            "partner_not_found",
+            "This partner does not exist.",
+        )
+
+    checks = db.scalars(
+        select(CheckResult)
+        .where(CheckResult.partner_id == partner_id)
+        .order_by(
+            CheckResult.checked_at.desc(),
+            CheckResult.id.desc(),
+        )
+    ).all()
+
+    return [CheckRead.from_result(check) for check in checks]
+
+
+# Updates a partner's company name while ensuring it belongs to the current organization.
+# Existing identifiers and verification history remain unchanged.
+@router.patch("/{partner_id}", response_model=PartnerRead)
+def update_partner(
+    partner_id: uuid.UUID,
+    body: PartnerUpdate,
+    db: DbSession,
+    organization_id: OrganizationId,
+) -> Partner:
+    """Update the editable details of a partner."""
+
+    partner = db.scalar(
+        select(Partner).where(
+            Partner.id == partner_id,
+            Partner.organization_id == organization_id,
+        )
+    )
+
+    if partner is None:
+        raise api_error(
+            status.HTTP_404_NOT_FOUND,
+            "partner_not_found",
+            "This partner does not exist.",
+        )
+
+    if "company_name" in body.model_fields_set:
+        partner.company_name = (
+            body.company_name.strip()
+            if body.company_name and body.company_name.strip()
+            else None
+        )
+
+    db.commit()
+    db.refresh(partner)
+
+    return partner
+
+
+# Archives a partner without deleting its verification history.
+@router.patch("/{partner_id}/archive", response_model=PartnerRead)
+def archive_partner(
+    partner_id: uuid.UUID,
+    db: DbSession,
+    organization_id: OrganizationId,
+) -> Partner:
+    partner = db.scalar(
+        select(Partner).where(
+            Partner.id == partner_id,
+            Partner.organization_id == organization_id,
+        )
+    )
+
+    if partner is None:
+        raise api_error(
+            status.HTTP_404_NOT_FOUND,
+            "partner_not_found",
+            "This partner does not exist.",
+        )
+
+    partner.is_archived = True
+    db.commit()
+    db.refresh(partner)
+
+    return partner
+
+
+# Restores an archived partner to the active directory.
+@router.patch("/{partner_id}/restore", response_model=PartnerRead)
+def restore_partner(
+    partner_id: uuid.UUID,
+    db: DbSession,
+    organization_id: OrganizationId,
+) -> Partner:
+    partner = db.scalar(
+        select(Partner).where(
+            Partner.id == partner_id,
+            Partner.organization_id == organization_id,
+        )
+    )
+
+    if partner is None:
+        raise api_error(
+            status.HTTP_404_NOT_FOUND,
+            "partner_not_found",
+            "This partner does not exist.",
+        )
+
+    partner.is_archived = False
+    db.commit()
+    db.refresh(partner)
+
+    return partner
 
 
 @router.post(
@@ -313,9 +560,12 @@ def _run_check(
     """
     partner = db.scalar(
         select(Partner).where(
-            Partner.id == partner_id, Partner.organization_id == organization_id
+            Partner.id == partner_id,
+            Partner.organization_id == organization_id,
+            Partner.is_archived.is_(False),
         )
     )
+
     if partner is None:
         raise api_error(
             status.HTTP_404_NOT_FOUND,

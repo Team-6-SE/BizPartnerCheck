@@ -3,6 +3,7 @@ from datetime import UTC, date, datetime
 from typing import Any
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -63,6 +64,20 @@ class Partner(Base):
     # without leading zeros + lower-case letter, e.g. "123456a" (app/partners/register.py).
     company_register_number: Mapped[str | None] = mapped_column(
         String(10), nullable=True
+    )
+    # Optional company name, editable by the user.
+    company_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # Archived partners remain in the database with their check history.
+    is_archived: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+
+    # Updated automatically when the partner record changes.
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
