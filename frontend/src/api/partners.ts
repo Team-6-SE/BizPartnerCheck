@@ -32,6 +32,7 @@ export type Partner = {
   updated_at?: string
   latest_vies_check: CheckResult | null
   latest_bmf_check: CheckResult | null
+  latest_hfu_check: CheckResult | null
 }
 export type PartnerPage = {
   items: Partner[]
@@ -160,4 +161,17 @@ export function runBmfCheck(partnerId: string): Promise<CheckResult> {
   return request<CheckResult>(`/partners/${encodeURIComponent(partnerId)}/checks/bmf`, {
     method: 'POST',
   })
+}
+
+/**
+ * Ask the ÖGK whether the partner is on the HFU list today (contractor liability).
+ * OK: listed. FINDING: not listed, a withholding may apply. ERROR is a normal result,
+ * also when the organisation's own VAT number is not set.
+ */
+export function runHfuCheck(partnerId: string): Promise<CheckResult> {
+  return request<CheckResult>(
+    `/partners/${encodeURIComponent(partnerId)}/checks/hfu`,
+    { method: 'POST' },
+    CHECK_TIMEOUT_MS,
+  )
 }

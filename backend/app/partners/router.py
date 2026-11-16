@@ -10,9 +10,10 @@ from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.adapters import bmf, vies
+from app.adapters import bmf, hfu, vies
 from app.adapters.base import CheckStatus, CheckSubject, SourceAdapter
 from app.adapters.bmf import get_bmf_adapter
+from app.adapters.hfu import get_hfu_adapter
 from app.adapters.vies import get_vies_adapter
 from app.db.session import get_db
 from app.errors import api_error
@@ -35,6 +36,9 @@ DbSession = Annotated[Session, Depends(get_db)]
 OrganizationId = Annotated[uuid.UUID, Depends(get_current_organization_id)]
 Vies = Annotated[SourceAdapter, Depends(get_vies_adapter)]
 Bmf = Annotated[SourceAdapter, Depends(get_bmf_adapter)]
+Hfu = Annotated[SourceAdapter, Depends(get_hfu_adapter)]
+# Sources whose latest result the partner list shows.
+LISTED_SOURCES = (vies.SOURCE, bmf.SOURCE, hfu.SOURCE)
 
 UNIQUE_VAT_CONSTRAINT = "uq_partners_organization_vat"
 UNIQUE_REGISTER_CONSTRAINT = "uq_partners_organization_register"
@@ -114,6 +118,7 @@ class PartnerRead(BaseModel):
     updated_at: datetime
     latest_vies_check: CheckRead | None = None
     latest_bmf_check: CheckRead | None = None
+    latest_hfu_check: CheckRead | None = None
 
 
 class PartnerPage(BaseModel):
@@ -316,13 +321,13 @@ def list_partners(
 
 
 def _with_latest_checks(db: Session, partners: Sequence[Partner]) -> list[PartnerRead]:
-    """The partners with their latest VIES and BMF result (one query for all of them)."""
+    """The partners with their latest VIES, BMF and HFU result (one query for all of them)."""
     partner_ids = [partner.id for partner in partners]
     latest = db.scalars(
         select(CheckResult)
         .where(
             CheckResult.partner_id.in_(partner_ids),
-            CheckResult.source.in_((vies.SOURCE, bmf.SOURCE)),
+            CheckResult.source.in_(LISTED_SOURCES),
         )
         # Latest result per partner and source (PostgreSQL DISTINCT ON).
         .order_by(
@@ -350,6 +355,7 @@ def _with_latest_checks(db: Session, partners: Sequence[Partner]) -> list[Partne
             updated_at=partner.updated_at,
             latest_vies_check=read(partner, vies.SOURCE),
             latest_bmf_check=read(partner, bmf.SOURCE),
+            latest_hfu_check=read(partner, hfu.SOURCE),
         )
         for partner in partners
     ]
@@ -570,6 +576,31 @@ def run_bmf_check(
     Partners without a VAT number are matched by company register number and name.
     """
     return _run_check(db, organization_id, partner_id, adapter, needs_vat_number=False)
+
+
+@router.post(
+    "/{partner_id}/checks/hfu",
+    response_model=CheckRead,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        404: {"description": "Partner not found"},
+        409: {"description": "Partner has no VAT number"},
+    },
+)
+def run_hfu_check(
+    partner_id: uuid.UUID,
+    db: DbSession,
+    organization_id: OrganizationId,
+    adapter: Hfu,
+) -> CheckRead:
+    """Ask the ÖGK whether the partner is on the HFU list today and store the answer.
+
+    OK: on the list (no withholding for contractor liability). FINDING: not on the
+    list (a withholding may apply to payments). ERROR: the service could not be
+    asked, or the organisation's own VAT number (the requester) is not set.
+    The ÖGK identifies the partner by its VAT number.
+    """
+    return _run_check(db, organization_id, partner_id, adapter)
 
 
 def _company_name(db: Session, partner_id: uuid.UUID) -> str | None:

@@ -161,6 +161,16 @@ export function PartnerDetailPage() {
               <p className="text-sm text-muted-foreground">Not checked yet.</p>
             )}
           </section>
+          <section aria-label="HFU list" className="flex flex-col gap-2">
+            <h3 className="text-sm font-medium">ÖGK HFU list (contractor liability)</h3>
+            {partner.latest_hfu_check ? (
+              <CheckResultView check={partner.latest_hfu_check} />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                {partner.vat_number ? 'Not checked yet.' : 'No VAT number, HFU does not apply.'}
+              </p>
+            )}
+          </section>
         </CardContent>
       </Card>
 
