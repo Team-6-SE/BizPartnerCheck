@@ -49,6 +49,12 @@ export function SignInPage() {
           The sign-in service cannot be reached right now. Please try again in a moment.
         </p>
       )}
+      <p className="text-center text-sm text-muted-foreground">
+        New to BizPartnerCheck?{' '}
+        <Link to="/register" className="text-foreground underline underline-offset-4 hover:text-primary">
+          Register your company
+        </Link>
+      </p>
     </FullPageMessage>
   )
 }

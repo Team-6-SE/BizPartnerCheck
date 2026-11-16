@@ -189,3 +189,21 @@ def register(
             ) from exc
 
         raise
+
+    except Exception:
+        # Anything unexpected (e.g. the database is gone at commit): nothing may stay
+        # half created, so the Keycloak user is removed again.
+        db.rollback()
+        if keycloak_user_id:
+            try:
+                keycloak.delete_user(keycloak_user_id)
+            except KeycloakRegistrationError:
+                logger.exception(
+                    "Could not remove Keycloak user after an unexpected error."
+                )
+        raise
+
+    finally:
+        close = getattr(keycloak, "close", None)
+        if callable(close):
+            close()

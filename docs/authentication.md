@@ -47,7 +47,7 @@ sequenceDiagram
 |---|---|---|
 | Client `bizpartnercheck-web` | public client, authorization code flow, PKCE `S256` required, no password grant | Recommended flow for browser apps; no client secret in the browser |
 | Audience mapper | adds `bizpartnercheck-api` to access tokens | The API accepts only tokens meant for it |
-| Sign-in | e-mail as user name; self-registration off | Companies register through our own form later (S2.2) |
+| Sign-in | e-mail as user name; self-registration off | Companies register through our own form, see [registration.md](registration.md) |
 | Password policy | at least 12 characters, not the e-mail, not one of the last 3 | NFR-08 |
 | Brute force | after **5** failed sign-ins the account is locked for 5 min (up to 15 min) | T2.1.5 |
 | Access token | 5 minutes; renewed in the background with the refresh token | Short-lived tokens limit the damage of a leaked token |

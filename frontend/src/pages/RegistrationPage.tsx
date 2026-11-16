@@ -18,6 +18,14 @@ type FormValues = {
 
 type FormErrors = Partial<Record<keyof FormValues, string>>
 
+/** Request field names of the API and the form fields they belong to. */
+const SERVER_FIELDS: Record<string, keyof FormValues> = {
+  company_name: 'companyName',
+  admin_name: 'adminName',
+  email: 'email',
+  vat_number: 'vatNumber',
+}
+
 const translations = {
   en: {
     title: 'Create Your Account',
@@ -27,7 +35,11 @@ const translations = {
     email: 'Email address',
     vat: 'VAT number (optional)',
     submit: 'Create Account',
+    submitting: 'Creating account…',
     signIn: 'Already have an account? Sign in',
+    successTitle: 'Check Your E-Mail',
+    successHint: 'Open the link in the e-mail to confirm your address and set your password. Then you can sign in.',
+    duplicateVat: 'An organisation with this VAT number is already registered.',
     required: 'This field is required.',
     invalidEmail: 'Please enter a valid email address.',
     language: 'Language',
@@ -44,7 +56,11 @@ const translations = {
     email: 'E-Mail-Adresse',
     vat: 'Umsatzsteuer-ID (optional)',
     submit: 'Konto erstellen',
+    submitting: 'Konto wird erstellt…',
     signIn: 'Sie haben bereits ein Konto? Anmelden',
+    successTitle: 'Bitte prüfen Sie Ihre E-Mails',
+    successHint: 'Öffnen Sie den Link in der E-Mail, um Ihre Adresse zu bestätigen und Ihr Passwort festzulegen. Danach können Sie sich anmelden.',
+    duplicateVat: 'Eine Organisation mit dieser UID-Nummer ist bereits registriert.',
     required: 'Dieses Feld ist erforderlich.',
     invalidEmail: 'Bitte geben Sie eine gültige E-Mail-Adresse ein.',
     language: 'Sprache',
@@ -63,15 +79,17 @@ export function RegistrationPage() {
     email: '',
     vatNumber: '',
   })
-    function updateField(field: keyof FormValues, value: string) {
-  setValues((current) => ({
-    ...current,
-    [field]: value,
-  }))
-}
+  function updateField(field: keyof FormValues, value: string) {
+    setValues((current) => ({
+      ...current,
+      [field]: value,
+    }))
+    setErrors((current) => (current[field] ? { ...current, [field]: undefined } : current))
+  }
   const [errors, setErrors] = useState<FormErrors>({})
   const [message, setMessage] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [registered, setRegistered] = useState(false)
 
   const t = translations[language]
 
@@ -124,17 +142,24 @@ async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
       const body = await response.json().catch(() => null)
       const detail = body?.detail
 
-      if (detail?.code === 'email_already_registered') {
-        throw new ApiError(t.duplicateEmail, response.status, detail.code)
+      // Errors about one field are shown at that field.
+      const field = SERVER_FIELDS[detail?.field ?? '']
+      if (field) {
+        const text =
+          detail?.code === 'email_already_registered'
+            ? t.duplicateEmail
+            : detail?.code === 'duplicate_organization_vat'
+              ? t.duplicateVat
+              : detail?.message || t.registrationError
+        setErrors({ [field]: text })
+        document.getElementById(field)?.focus()
+        return
       }
 
-      throw new ApiError(
-        detail?.message || t.registrationError,
-        response.status,
-        detail?.code,
-      )
+      throw new ApiError(detail?.message || t.registrationError, response.status, detail?.code)
     }
 
+    setRegistered(true)
     setMessage(t.success)
   } catch (error) {
     setMessage(
@@ -144,6 +169,19 @@ async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     setSubmitting(false)
   }
 }
+
+  if (registered) {
+    return (
+      <FullPageMessage title={t.successTitle} description={values.email}>
+        <p role="status" className="text-center text-sm text-muted-foreground">
+          {t.successHint}
+        </p>
+        <Link to="/sign-in" className="text-sm underline underline-offset-4 hover:text-primary">
+          {t.signIn}
+        </Link>
+      </FullPageMessage>
+    )
+  }
 
   return (
     <FullPageMessage title={t.title} description={t.description}>
@@ -239,10 +277,19 @@ async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
               id="vatNumber"
               value={values.vatNumber}
               onChange={(event) => updateField('vatNumber', event.target.value)}
+              autoCapitalize="characters"
+              spellCheck={false}
+              aria-invalid={Boolean(errors.vatNumber)}
+              aria-describedby={errors.vatNumber ? 'vatNumber-error' : undefined}
             />
+            {errors.vatNumber && (
+              <p id="vatNumber-error" role="alert" className="text-sm text-destructive">
+                {errors.vatNumber}
+              </p>
+            )}
           </div>
             <Button type="submit" className="w-full" disabled={submitting}>
-                {submitting ? 'Submitting...' : t.submit}
+                {submitting ? t.submitting : t.submit}
             </Button>
 
           {message && (
@@ -260,4 +307,4 @@ async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
       </div>
     </FullPageMessage>
   )
-}
+}

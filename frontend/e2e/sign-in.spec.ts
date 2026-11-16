@@ -41,7 +41,8 @@ test('the API is called with the token and the partner list loads', async ({ pag
   await page.goto('/partners')
   await submitCredentials(page, EMAIL, PASSWORD)
 
-  const response = await page.waitForResponse((r) => r.url().endsWith('/api/v1/partners'))
+  // The list is loaded with search, sort and page parameters (S3.2), so compare the path only.
+  const response = await page.waitForResponse((r) => new URL(r.url()).pathname === '/api/v1/partners')
   expect(response.status()).toBe(200)
   expect(response.request().headers()['authorization']).toMatch(/^Bearer /)
   await expect(page.getByText('Could Not Load Partners')).toHaveCount(0)

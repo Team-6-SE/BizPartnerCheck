@@ -16,8 +16,16 @@ from app.adapters.bmf import get_bmf_adapter
 from app.adapters.vies import get_vies_adapter
 from app.db.session import get_db
 from app.errors import api_error
-from app.partners.register import InvalidRegisterNumber, validate_register_number
-from app.partners.vat import InvalidVatNumber, validate_vat_number
+from app.partners.register import (
+    InvalidRegisterNumber,
+    normalize_register_number,
+    validate_register_number,
+)
+from app.partners.vat import (
+    InvalidVatNumber,
+    normalize_vat_number,
+    validate_vat_number,
+)
 from app.tenancy import get_current_organization_id
 from app.db.models import CheckResult, Organization, Partner
 
@@ -30,6 +38,8 @@ Bmf = Annotated[SourceAdapter, Depends(get_bmf_adapter)]
 
 UNIQUE_VAT_CONSTRAINT = "uq_partners_organization_vat"
 UNIQUE_REGISTER_CONSTRAINT = "uq_partners_organization_register"
+
+SORT_FIELDS = ("created_at", "company_name", "vat_number", "company_register_number")
 
 
 class PartnerCreate(BaseModel):
@@ -130,6 +140,12 @@ def _duplicate_register(register_number: str) -> HTTPException:
         f"A partner with company register number FN {register_number} already exists.",
         field="company_register_number",
     )
+
+
+def _contains(value: str) -> str:
+    """LIKE pattern for "contains value": % and _ typed by the user are literal."""
+    escaped = value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
 
 
 def _blank(value: str | None) -> bool:
@@ -241,9 +257,11 @@ def list_partners(
     }
 
     if sort_by not in allowed_sort_fields:
-        raise HTTPException(
-            status_code=422,
-            detail="Invalid sort field.",
+        raise api_error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "invalid_sort",
+            f"Partners can be sorted by: {', '.join(SORT_FIELDS)}.",
+            field="sort_by",
         )
 
     query = select(Partner).where(
@@ -252,19 +270,33 @@ def list_partners(
     )
 
     if search and search.strip():
-        term = f"%{search.strip()}%"
-        query = query.where(
-            or_(
-                Partner.company_name.ilike(term),
-                Partner.vat_number.ilike(term),
-                Partner.company_register_number.ilike(term),
+        term = search.strip()
+        # Numbers are stored normalised ("ATU12345678", "123456a"), so the search
+        # term is normalised the same way: "atu 1234" and "FN 123456a" are found too.
+        conditions = [Partner.company_name.ilike(_contains(term), escape="\\")]
+        vat_term = normalize_vat_number(term)
+        if vat_term:
+            conditions.append(
+                Partner.vat_number.ilike(_contains(vat_term), escape="\\")
             )
-        )
+        register_term = normalize_register_number(term)
+        if register_term:
+            conditions.append(
+                Partner.company_register_number.ilike(
+                    _contains(register_term), escape="\\"
+                )
+            )
+        query = query.where(or_(*conditions))
 
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
 
     sort_column = allowed_sort_fields[sort_by]
-    ordering = asc(sort_column) if sort_order == "asc" else desc(sort_column)
+    # Partners without a name or number come last in both directions.
+    ordering = (
+        asc(sort_column).nulls_last()
+        if sort_order == "asc"
+        else desc(sort_column).nulls_last()
+    )
 
     partners = db.scalars(
         query.order_by(ordering, Partner.id)
@@ -496,7 +528,7 @@ def restore_partner(
     status_code=status.HTTP_201_CREATED,
     responses={
         404: {"description": "Partner not found"},
-        409: {"description": "Partner has no VAT number"},
+        409: {"description": "Partner has no VAT number or is archived"},
     },
 )
 def run_vies_check(
@@ -518,7 +550,10 @@ def run_vies_check(
     "/{partner_id}/checks/bmf",
     response_model=CheckRead,
     status_code=status.HTTP_201_CREATED,
-    responses={404: {"description": "Partner not found"}},
+    responses={
+        404: {"description": "Partner not found"},
+        409: {"description": "Partner is archived"},
+    },
 )
 def run_bmf_check(
     partner_id: uuid.UUID,
@@ -572,7 +607,6 @@ def _run_check(
         select(Partner).where(
             Partner.id == partner_id,
             Partner.organization_id == organization_id,
-            Partner.is_archived.is_(False),
         )
     )
 
@@ -581,6 +615,13 @@ def _run_check(
             status.HTTP_404_NOT_FOUND,
             "partner_not_found",
             "This partner does not exist.",
+        )
+    if partner.is_archived:
+        # The partner exists (it is ours), so 409 and not 404: restore it first.
+        raise api_error(
+            status.HTTP_409_CONFLICT,
+            "partner_archived",
+            "This partner is archived. Restore it before checking it again.",
         )
     if partner.vat_number is None and needs_vat_number:
         # Added by company register number only: VIES needs a VAT number.

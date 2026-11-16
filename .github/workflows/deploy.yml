@@ -30,13 +30,20 @@ jobs:
         with:
           context: ./backend
           push: true
-          tags: ghcr.io/team-6-se/bizpartnercheck-backend:staging
+          tags: |
+            ghcr.io/team-6-se/bizpartnercheck-backend:staging
+            ghcr.io/team-6-se/bizpartnercheck-backend:${{ github.sha }}
       - name: Build and push frontend
         uses: docker/build-push-action@v6
         with:
           context: ./frontend
           push: true
-          tags: ghcr.io/team-6-se/bizpartnercheck-frontend:staging
+          tags: |
+            ghcr.io/team-6-se/bizpartnercheck-frontend:staging
+            ghcr.io/team-6-se/bizpartnercheck-frontend:${{ github.sha }}
+          # Repository variable AUTH_DOMAIN (Settings → Secrets and variables → Actions → Variables).
+          build-args: |
+            VITE_OIDC_AUTHORITY=https://${{ vars.AUTH_DOMAIN }}/realms/bizpartnercheck
 
   deploy:
     name: Deploy to staging server

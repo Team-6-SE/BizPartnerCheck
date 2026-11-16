@@ -1,4 +1,10 @@
-"""Keycloak operations used during customer registration."""
+"""Keycloak operations used during customer registration.
+
+The API creates the first admin of a new organisation with its own Keycloak client
+(bizpartnercheck-registration, may only manage users). Locally the secret from the
+realm file is used; on any other OIDC_ISSUER KEYCLOAK_REGISTRATION_CLIENT_SECRET must
+be set, otherwise registration answers "temporarily unavailable" (never a known secret).
+"""
 
 import os
 import uuid
@@ -10,6 +16,9 @@ from app.auth import DEFAULT_ISSUER
 
 DEFAULT_CLIENT_ID = "bizpartnercheck-registration"
 LOCAL_DEV_SECRET = "local-registration-only-change-in-production"
+# Where "Back to application" leads after the e-mail is verified and the password set.
+# The same APP_BASE_URL fills the allowed redirect URLs in the realm file.
+DEFAULT_APP_URL = "http://localhost:5173"
 
 
 class KeycloakRegistrationError(Exception):
@@ -27,13 +36,23 @@ class KeycloakRegistrationClient:
         self.client_id = (
             os.environ.get("KEYCLOAK_REGISTRATION_CLIENT_ID") or DEFAULT_CLIENT_ID
         )
-        self.client_secret = (
-            os.environ.get("KEYCLOAK_REGISTRATION_CLIENT_SECRET") or LOCAL_DEV_SECRET
-        )
+        secret = os.environ.get("KEYCLOAK_REGISTRATION_CLIENT_SECRET")
+        if not secret and issuer == DEFAULT_ISSUER:
+            secret = LOCAL_DEV_SECRET
+        self.client_secret = secret
+        app_url = os.environ.get("APP_BASE_URL") or DEFAULT_APP_URL
+        self.app_url = app_url.rstrip("/") + "/"
 
         self.http = httpx.Client(timeout=10)
 
+    def close(self) -> None:
+        self.http.close()
+
     def _token(self) -> str:
+        if not self.client_secret:
+            raise KeycloakRegistrationError(
+                "KEYCLOAK_REGISTRATION_CLIENT_SECRET is not set."
+            )
         try:
             response = self.http.post(
                 self.token_url,
@@ -140,6 +159,7 @@ class KeycloakRegistrationClient:
                 headers=self._headers(),
                 params={
                     "client_id": "bizpartnercheck-web",
+                    "redirect_uri": self.app_url,
                     "lifespan": 86400,
                 },
                 json=["VERIFY_EMAIL", "UPDATE_PASSWORD"],
