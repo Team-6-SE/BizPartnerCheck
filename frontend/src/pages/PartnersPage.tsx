@@ -528,6 +528,7 @@ export function PartnersPage() {
                     const errors = checkErrors[partner.id]
                     const checking = checkingIds.has(partner.id)
                     const viesCompanyName = check?.status === 'OK' ? check.company_name : null
+                    const viesAddress = check?.status === 'OK' ? check.address : null
 
                     return (
                       <TableRow
@@ -614,6 +615,11 @@ export function PartnersPage() {
                               title={viesCompanyName}
                             >
                               VIES: {viesCompanyName}
+                            </div>
+                          )}
+                          {viesAddress && (
+                            <div className="mt-1 max-w-56 whitespace-pre-line text-xs text-muted-foreground">
+                              {viesAddress}
                             </div>
                           )}
 
@@ -787,7 +793,14 @@ function CheckResultView({
           {dateFormat.format(new Date(check.checked_at))}
         </time>
       </div>
-      {(check.status !== 'OK' || stale) && <p className="text-xs text-muted-foreground">{check.message}</p>}
+      {check.consultation_number && (
+        <p className="text-xs text-muted-foreground">
+          Consultation number <span className="font-mono">{check.consultation_number}</span>
+        </p>
+      )}
+      {(check.status !== 'OK' || stale) && (
+        <p className="text-xs text-muted-foreground">{check.message}</p>
+      )}
       {check.data_as_of && (
         <p
           className={

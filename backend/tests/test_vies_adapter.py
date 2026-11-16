@@ -1,5 +1,6 @@
 """The VIES adapter with fake HTTP answers: no internet needed."""
 
+import json
 from collections.abc import Callable
 
 import httpx2 as httpx
@@ -10,8 +11,10 @@ from app.adapters.limits import Limits
 from app.adapters.vies import (
     ViesAdapter,
     company_name,
+    consultation_number,
     describe,
     error_code,
+    registered_address,
 )
 
 BASE_URL = "https://vies.test/rest-api"
@@ -35,6 +38,8 @@ INVALID = {
     "address": "---",
     "vatNumber": "U12345678",
 }
+
+CONSULTED = {**VALID, "requestIdentifier": "WAPIAAAAZ1B2C3D4"}
 
 
 def unavailable(code: str) -> dict:
@@ -155,6 +160,20 @@ def test_permanent_vies_error_is_not_asked_again() -> None:
     assert len(requests) == 1
 
 
+def test_rejected_requester_is_explained_and_not_asked_again() -> None:
+    adapter, requests = make_adapter(answers(unavailable("INVALID_REQUESTER_INFO")))
+
+    result = adapter.check(
+        CheckSubject(vat_number="ATU33864707", requester_vat="ATU00000000")
+    )
+
+    assert result.status == CheckStatus.ERROR
+    assert len(requests) == 1  # a wrong setting will not change when asked again
+    assert "organisation's VAT number" in result.explanation
+    assert "organisation settings" in result.explanation
+    assert "try again" not in result.explanation.lower()
+
+
 @pytest.mark.parametrize(
     "response",
     [
@@ -230,3 +249,60 @@ def test_helpers_for_people() -> None:
     assert "did not answer in time" in message
     assert "not confirmed" in message
     assert "not confirmed" in describe(CheckStatus.ERROR, {"something": "new"})
+
+
+def test_address_and_consultation_number_helpers() -> None:
+    assert registered_address(VALID) == "Am Brunnen 1\nAT-5330 Fuschl/See"
+    assert registered_address(INVALID) is None
+    assert consultation_number(VALID) is None
+    assert consultation_number(CONSULTED) == "WAPIAAAAZ1B2C3D4"
+
+
+def test_check_without_requester_uses_get() -> None:
+    adapter, requests = make_adapter(answers(VALID))
+
+    check(adapter, "ATU33864707")
+
+    assert requests[0].method == "GET"
+
+
+def test_check_with_requester_sends_post_and_keeps_consultation_number() -> None:
+    adapter, requests = make_adapter(answers(CONSULTED))
+
+    result = adapter.check(
+        CheckSubject(vat_number="ATU33864707", requester_vat="DE123456789")
+    )
+
+    assert result.status == CheckStatus.OK
+    assert consultation_number(result.raw) == "WAPIAAAAZ1B2C3D4"
+    assert requests[0].method == "POST"
+    assert str(requests[0].url) == f"{BASE_URL}/check-vat-number"
+    assert json.loads(requests[0].content) == {
+        "countryCode": "AT",
+        "vatNumber": "U33864707",
+        "requesterMemberStateCode": "DE",
+        "requesterNumber": "123456789",
+    }
+
+
+def test_post_answer_with_valid_key_is_ok() -> None:
+    answer = {"valid": True, "userError": "VALID", "name": "Red Bull GmbH"}
+    adapter, _ = make_adapter(answers(answer))
+
+    result = adapter.check(
+        CheckSubject(vat_number="ATU33864707", requester_vat="DE123456789")
+    )
+
+    assert result.status == CheckStatus.OK
+
+
+def test_post_answer_invalid_without_user_error_is_finding() -> None:
+    # POST /check-vat-number answers "valid": false without any userError.
+    answer = {"valid": False, "requestIdentifier": "WAPIAAAAZ1B2C3D4"}
+    adapter, _ = make_adapter(answers(answer))
+
+    result = adapter.check(
+        CheckSubject(vat_number="ATU12345678", requester_vat="DE123456789")
+    )
+
+    assert result.status == CheckStatus.FINDING

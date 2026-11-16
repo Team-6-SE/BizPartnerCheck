@@ -7,7 +7,7 @@ import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
-from sqlalchemy import delete, inspect, text
+from sqlalchemy import delete, inspect, text, update
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
@@ -18,6 +18,7 @@ from app.db.models import (
     BmfImport,
     BmfListEntry,
     CheckResult,
+    Organization,
     Partner,
     SecurityEvent,
 )
@@ -52,9 +53,12 @@ class FakeVies(ViesAdapter):
         super().__init__(sleep=lambda _seconds: None)
         self.answer: dict[str, Any] = VALID_ANSWER
         self.checked: list[str] = []
+        # The organisation's own VAT number sent with each call (None: none set).
+        self.requesters: list[str | None] = []
 
     def query(self, subject: CheckSubject, timeout: float) -> dict[str, Any]:
         self.checked.append(subject.vat_number)
+        self.requesters.append(subject.requester_vat)
         return self.answer
 
 
@@ -151,7 +155,7 @@ def db(database_ready: None) -> Iterator[Session]:
 
     Tests use the real database (tables from `alembic upgrade head`),
     but leave no data behind. Each test starts without partners, checks and
-    security log entries;
+    security log entries, and without an organisation VAT number;
     your own data comes back when the transaction is rolled back.
     """
     connection = engine.connect()
@@ -165,6 +169,8 @@ def db(database_ready: None) -> Iterator[Session]:
     session.execute(delete(Partner))
     session.execute(delete(BmfListEntry))
     session.execute(delete(BmfImport))
+    # A VAT number set by hand in the local database must not change test results.
+    session.execute(update(Organization).values(vat_number=None))
     # The security log is append-only; this transaction may empty it (it is rolled back).
     session.execute(
         text("SET LOCAL bizpartnercheck.allow_security_event_delete = 'on'")
