@@ -1,5 +1,19 @@
 {
   "realm": "bizpartnercheck",
+  "components": {
+    "org.keycloak.userprofile.UserProfileProvider": [
+  {
+    "providerId": "declarative-user-profile",
+    "subComponents": {},
+"config": {
+  "kc.user.profile.config": [
+    "{\"attributes\":[{\"name\":\"username\",\"displayName\":\"${username}\",\"validations\":{\"length\":{\"min\":3,\"max\":255},\"username-prohibited-characters\":{},\"up-username-not-idn-homograph\":{}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"email\",\"displayName\":\"${email}\",\"validations\":{\"email\":{},\"length\":{\"max\":255}},\"required\":{\"roles\":[\"user\"]},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"firstName\",\"displayName\":\"${firstName}\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"lastName\",\"displayName\":\"${lastName}\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"organization_id\",\"displayName\":\"Organization ID\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\"]},\"validations\":{\"length\":{\"min\":36,\"max\":36}}}],\"unmanagedAttributePolicy\":\"DISABLED\"}"
+  ]
+}
+
+  }
+]
+    },
   "displayName": "BizPartnerCheck",
   "enabled": true,
   "sslRequired": "external",

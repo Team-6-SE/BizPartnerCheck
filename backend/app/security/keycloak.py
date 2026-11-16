@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session
 from app.auth import DEFAULT_ISSUER
 from app.db.models import SecurityEvent
 from app.security.events import SOURCE_KEYCLOAK, EventType
-from app.tenancy import TEST_ORGANIZATION_ID
+
 
 DEFAULT_CLIENT_ID = "bizpartnercheck-api"
 # Only valid for the local development Keycloak (infra/keycloak/import). Never used with
@@ -116,6 +116,25 @@ class KeycloakAdminClient:
                 user = {}
             self._emails[user_id] = user.get("email") or user.get("username")
         return self._emails[user_id]
+
+    def user_organization_id(self, user_id: str | None) -> uuid.UUID | None:
+        """Read the user's organization from Keycloak."""
+        if not user_id:
+            return None
+
+        try:
+            user = self._get(f"/users/{user_id}", {})
+        except _NotFound:
+            return None
+
+        values = user.get("attributes", {}).get("organization_id", [])
+        if not isinstance(values, list) or len(values) != 1:
+            return None
+
+        try:
+            return uuid.UUID(values[0])
+        except (ValueError, TypeError, AttributeError):
+            return None
 
     # -------------------------------------------------------------- internals
 
@@ -437,16 +456,6 @@ def describe(event: MappedEvent) -> str:
             return event.event_type.value
 
 
-def organization_for_user(user_id: str | None) -> uuid.UUID | None:
-    """The customer organisation of a Keycloak user.
-
-    Until story S2.3 puts the organisation into Keycloak, every known user belongs to the
-    test organisation. Events without a user (e.g. a failed sign-in with an unknown
-    e-mail) belong to no organisation and are not shown to organisation admins.
-    """
-    return TEST_ORGANIZATION_ID if user_id else None
-
-
 # ------------------------------------------------------------------ sync
 
 
@@ -489,7 +498,7 @@ def _rows(
         rows.append(
             {
                 "id": uuid.uuid4(),
-                "organization_id": organization_for_user(owner),
+                "organization_id": client.user_organization_id(owner),
                 "occurred_at": event.occurred_at,
                 "event_type": event.event_type.value,
                 "actor_id": _cut(event.actor_id, 64),
