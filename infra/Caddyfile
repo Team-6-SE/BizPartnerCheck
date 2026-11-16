@@ -1,0 +1,22 @@
+
+{$DOMAIN} {
+    tls {
+        protocols tls1.2 tls1.3
+    }
+
+    handle /api/* {
+        reverse_proxy backend:8000
+    }
+
+    handle {
+        reverse_proxy frontend:80
+    }
+}
+
+{$AUTH_DOMAIN} {
+    tls {
+        protocols tls1.2 tls1.3
+    }
+
+    reverse_proxy keycloak:8080
+}

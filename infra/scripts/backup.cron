@@ -1,0 +1,2 @@
+
+0 2 * * * /bin/bash /opt/bizpartnercheck/scripts/backup.sh >> /var/log/bizpartnercheck-backup.log 2>&1
