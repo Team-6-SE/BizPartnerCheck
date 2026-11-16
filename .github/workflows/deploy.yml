@@ -1,9 +1,9 @@
 
 name: Deploy to Staging
 
+# Manual start only until the staging server and its secrets exist.
+# Later: add "push: branches: [main]" again for automatic deploys.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -53,8 +53,8 @@ jobs:
           username: ${{ secrets.STAGING_USER }}
           key: ${{ secrets.STAGING_SSH_KEY }}
           fingerprint: ${{ secrets.STAGING_SSH_FINGERPRINT }}
-          script:
-            set -e |
+          script: |
+            set -e
             cd /opt/bizpartnercheck
             docker compose --env-file deploy.env -f compose.deploy.yml pull
             docker compose --env-file deploy.env -f compose.deploy.yml up -d
