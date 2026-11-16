@@ -37,6 +37,10 @@ from app.adapters.fake import with_fake_from_env
 DEFAULT_BASE_URL = "https://ec.europa.eu/taxation_customs/vies/rest-api"
 SOURCE = "VIES"
 
+# VIES refused the requester (our organisation's own VAT number, sent for the
+# consultation number). A wrong setting, not a problem with the partner's number.
+INVALID_REQUESTER_INFO = "INVALID_REQUESTER_INFO"
+
 # VIES answers that may go away when we ask again a moment later.
 TEMPORARY_ERRORS = frozenset(
     {
@@ -123,6 +127,8 @@ class ViesAdapter(SourceAdapter):
             return Interpretation(CheckStatus.OK)
         if is_valid is False and user_error == "INVALID":
             return Interpretation(CheckStatus.FINDING)
+        # Only temporary problems are asked again; INVALID_REQUESTER_INFO and other
+        # permanent answers would come back the same.
         return Interpretation(
             CheckStatus.ERROR, try_again=user_error in TEMPORARY_ERRORS
         )
@@ -134,6 +140,8 @@ class ViesAdapter(SourceAdapter):
         self, scenario: Scenario, subject: CheckSubject
     ) -> dict[str, Any]:
         number = (subject.vat_number or "")[2:]
+        # Like VIES: a consultation number only when the requester's VAT number was sent.
+        consultation = "FAKE-CONSULT-0001" if subject.requester_vat else ""
         if scenario == Scenario.FINDING:
             return {
                 "isValid": False,
@@ -141,9 +149,7 @@ class ViesAdapter(SourceAdapter):
                 "name": "---",
                 "address": "---",
                 "vatNumber": number,
-                "requestIdentifier": "FAKE-CONSULT-0001"
-                if subject.requester_vat
-                else "",
+                "requestIdentifier": consultation,
             }
         return {
             "isValid": True,
@@ -151,6 +157,7 @@ class ViesAdapter(SourceAdapter):
             "name": "Muster Bau GmbH (fake VIES)",
             "address": "Hauptstrasse 1\nAT-1010 Wien",
             "vatNumber": number,
+            "requestIdentifier": consultation,
         }
 
 
@@ -194,7 +201,15 @@ _ERROR_MESSAGES = {
     "MS_MAX_CONCURRENT_REQ": "The tax office of this country is busy right now.",
     "MS_MAX_CONCURRENT_REQ_TIME": "The tax office of this country is busy right now.",
     "INVALID_INPUT": "VIES did not accept this VAT number.",
+    INVALID_REQUESTER_INFO: (
+        "VIES rejected your organisation's VAT number. "
+        "Please check it in the organisation settings."
+    ),
 }
+
+# Errors caused by our own settings: asking again will not help, a person must fix
+# the setting first. No "try again later" and no automatic retry for these.
+_SETTINGS_ERRORS = frozenset({INVALID_REQUESTER_INFO})
 
 
 def describe(status: CheckStatus, raw: dict[str, Any]) -> str:
@@ -203,9 +218,10 @@ def describe(status: CheckStatus, raw: dict[str, Any]) -> str:
         return "VIES confirms that this VAT number is valid."
     if status == CheckStatus.FINDING:
         return "VIES says this VAT number is not valid (not registered or no longer active)."
-    reason = _ERROR_MESSAGES.get(
-        error_code(raw) or "", "VIES could not check the number."
-    )
+    code = error_code(raw) or ""
+    reason = _ERROR_MESSAGES.get(code, "VIES could not check the number.")
+    if code in _SETTINGS_ERRORS:
+        return f"{reason} The number was not confirmed."
     return f"{reason} The number was not confirmed. Please try again later."
 
 

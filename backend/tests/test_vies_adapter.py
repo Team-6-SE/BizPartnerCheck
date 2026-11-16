@@ -160,6 +160,20 @@ def test_permanent_vies_error_is_not_asked_again() -> None:
     assert len(requests) == 1
 
 
+def test_rejected_requester_is_explained_and_not_asked_again() -> None:
+    adapter, requests = make_adapter(answers(unavailable("INVALID_REQUESTER_INFO")))
+
+    result = adapter.check(
+        CheckSubject(vat_number="ATU33864707", requester_vat="ATU00000000")
+    )
+
+    assert result.status == CheckStatus.ERROR
+    assert len(requests) == 1  # a wrong setting will not change when asked again
+    assert "organisation's VAT number" in result.explanation
+    assert "organisation settings" in result.explanation
+    assert "try again" not in result.explanation.lower()
+
+
 @pytest.mark.parametrize(
     "response",
     [

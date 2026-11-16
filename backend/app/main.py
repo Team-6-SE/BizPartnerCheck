@@ -13,6 +13,7 @@ from app.auth import AuthenticatedUser, get_current_user
 from app.bmf.background import bmf_import_schedule
 from app.bmf.router import router as bmf_admin_router
 from app.errors import error_body
+from app.organization.router import router as organization_router
 from app.partners.router import router as partners_router
 from app.security.background import security_event_sync
 from app.security.router import router as security_router
@@ -103,6 +104,7 @@ def database_unavailable(_request: Request, _exc: OperationalError) -> JSONRespo
 # new routers added here are protected automatically).
 api = APIRouter(prefix="/api/v1", dependencies=[Depends(get_current_user)])
 api.include_router(partners_router)
+api.include_router(organization_router)
 api.include_router(security_router)
 api.include_router(bmf_admin_router)
 
