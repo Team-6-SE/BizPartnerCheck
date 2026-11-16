@@ -37,6 +37,10 @@ from app.adapters.fake import with_fake_from_env
 DEFAULT_BASE_URL = "https://ec.europa.eu/taxation_customs/vies/rest-api"
 SOURCE = "VIES"
 
+# VIES refused the requester (our organisation's own VAT number, sent for the
+# consultation number). A wrong setting, not a problem with the partner's number.
+INVALID_REQUESTER_INFO = "INVALID_REQUESTER_INFO"
+
 # VIES answers that may go away when we ask again a moment later.
 TEMPORARY_ERRORS = frozenset(
     {
@@ -73,11 +77,27 @@ class ViesAdapter(SourceAdapter):
             # The API refuses such partners before; this only guards against bugs.
             raise ValueError("VIES needs a VAT number")
         country_code, number = vat_number[:2], vat_number[2:]
-        url = f"{self.base_url}/ms/{country_code}/vat/{number}"
+        requester = subject.requester_vat
+        headers = {"Accept": "application/json"}
         with httpx.Client(transport=self._transport) as client:
-            response = client.get(
-                url, headers={"Accept": "application/json"}, timeout=timeout
-            )
+            if requester:
+                response = client.post(
+                    f"{self.base_url}/check-vat-number",
+                    json={
+                        "countryCode": country_code,
+                        "vatNumber": number,
+                        "requesterMemberStateCode": requester[:2],
+                        "requesterNumber": requester[2:],
+                    },
+                    headers=headers,
+                    timeout=timeout,
+                )
+            else:
+                response = client.get(
+                    f"{self.base_url}/ms/{country_code}/vat/{number}",
+                    headers=headers,
+                    timeout=timeout,
+                )
 
         try:
             body = response.json()
@@ -101,12 +121,14 @@ class ViesAdapter(SourceAdapter):
             temporary = http_status >= 500 or http_status == 429
             return Interpretation(CheckStatus.ERROR, try_again=temporary)
 
-        is_valid = raw.get("isValid")
+        is_valid = raw.get("isValid", raw.get("valid"))
         user_error = raw.get("userError")
         if is_valid is True and user_error in (None, "VALID"):
             return Interpretation(CheckStatus.OK)
-        if is_valid is False and user_error == "INVALID":
+        if is_valid is False and user_error in (None, "INVALID"):
             return Interpretation(CheckStatus.FINDING)
+        # Only temporary problems are asked again; INVALID_REQUESTER_INFO and other
+        # permanent answers would come back the same.
         return Interpretation(
             CheckStatus.ERROR, try_again=user_error in TEMPORARY_ERRORS
         )
@@ -118,6 +140,8 @@ class ViesAdapter(SourceAdapter):
         self, scenario: Scenario, subject: CheckSubject
     ) -> dict[str, Any]:
         number = (subject.vat_number or "")[2:]
+        # Like VIES: a consultation number only when the requester's VAT number was sent.
+        consultation = "FAKE-CONSULT-0001" if subject.requester_vat else ""
         if scenario == Scenario.FINDING:
             return {
                 "isValid": False,
@@ -125,6 +149,7 @@ class ViesAdapter(SourceAdapter):
                 "name": "---",
                 "address": "---",
                 "vatNumber": number,
+                "requestIdentifier": consultation,
             }
         return {
             "isValid": True,
@@ -132,6 +157,7 @@ class ViesAdapter(SourceAdapter):
             "name": "Muster Bau GmbH (fake VIES)",
             "address": "Hauptstrasse 1\nAT-1010 Wien",
             "vatNumber": number,
+            "requestIdentifier": consultation,
         }
 
 
@@ -146,12 +172,22 @@ def error_code(raw: dict[str, Any]) -> str | None:
     return None
 
 
-def company_name(raw: dict[str, Any]) -> str | None:
-    """Registered name from VIES; some countries do not share it ("---")."""
-    name = raw.get("name")
-    if isinstance(name, str) and name.strip() not in ("", "---"):
-        return name.strip()
+def _clean(value: Any) -> str | None:
+    if isinstance(value, str) and value.strip() not in ("", "---"):
+        return value.strip()
     return None
+
+
+def company_name(raw: dict[str, Any]) -> str | None:
+    return _clean(raw.get("name"))
+
+
+def registered_address(raw: dict[str, Any]) -> str | None:
+    return _clean(raw.get("address"))
+
+
+def consultation_number(raw: dict[str, Any]) -> str | None:
+    return _clean(raw.get("requestIdentifier"))
 
 
 _ERROR_MESSAGES = {
@@ -165,7 +201,15 @@ _ERROR_MESSAGES = {
     "MS_MAX_CONCURRENT_REQ": "The tax office of this country is busy right now.",
     "MS_MAX_CONCURRENT_REQ_TIME": "The tax office of this country is busy right now.",
     "INVALID_INPUT": "VIES did not accept this VAT number.",
+    INVALID_REQUESTER_INFO: (
+        "VIES rejected your organisation's VAT number. "
+        "Please check it in the organisation settings."
+    ),
 }
+
+# Errors caused by our own settings: asking again will not help, a person must fix
+# the setting first. No "try again later" and no automatic retry for these.
+_SETTINGS_ERRORS = frozenset({INVALID_REQUESTER_INFO})
 
 
 def describe(status: CheckStatus, raw: dict[str, Any]) -> str:
@@ -174,9 +218,10 @@ def describe(status: CheckStatus, raw: dict[str, Any]) -> str:
         return "VIES confirms that this VAT number is valid."
     if status == CheckStatus.FINDING:
         return "VIES says this VAT number is not valid (not registered or no longer active)."
-    reason = _ERROR_MESSAGES.get(
-        error_code(raw) or "", "VIES could not check the number."
-    )
+    code = error_code(raw) or ""
+    reason = _ERROR_MESSAGES.get(code, "VIES could not check the number.")
+    if code in _SETTINGS_ERRORS:
+        return f"{reason} The number was not confirmed."
     return f"{reason} The number was not confirmed. Please try again later."
 
 
