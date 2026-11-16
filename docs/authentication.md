@@ -140,3 +140,27 @@ click **Authorize** and paste it. The token is valid for 5 minutes.
 - Second factor (MFA) for admins → done in S2.6, see [security-log.md](security-log.md)
 - Production setup (persistent Keycloak database, HTTPS host names, real SMTP, no demo user, strong admin
   password) → S1.3 / test deployment
+
+## Organisation assignment (S2.3 / SCRUM-28)
+
+A Keycloak administrator assigns a user's `organization_id` (UUID of an existing
+organisation in the application's database) under **Users → select user → Attributes**.
+The realm's declarative User Profile restricts editing this attribute to administrators;
+ordinary users cannot modify it. The `bizpartnercheck-web` protocol mapper includes it
+in the signed access token. Sign out and back in after changing an assignment.
+
+The backend verifies that token and scopes partner and security-log data to the
+organisation UUID. Without the claim, `/api/v1/me` can still respond, but data
+endpoints return `403` and `detail.code = "no_organization"`. Malformed UUID claims
+remain invalid tokens (`401`).
+
+The test organisation is provisioned for demo accounts and automated tests by the
+migration. It is **not** assigned to every signed-in user; production organisations
+are created separately. The demo account and seeded test organisation must not be
+used as a production tenancy provisioning workflow.
+
+**PostgreSQL RLS decision (T2.3.3):** This version enforces tenant isolation in the
+FastAPI/SQLAlchemy data-access layer, based on a signed and verified token. Cross-
+organisation resources return `404`. RLS is not currently enabled: adding it would
+require trusted per-transaction organisation context for API routes, scheduled jobs,
+migrations and tests. Revisit database-enforced RLS before production deployment.

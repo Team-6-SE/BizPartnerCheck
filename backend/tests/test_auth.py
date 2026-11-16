@@ -385,3 +385,25 @@ def test_unreachable_key_server_gives_503(anonymous_client: TestClient, tokens) 
     response = call(anonymous_client, "GET", "/api/v1/me", tokens.make())
 
     assert response.status_code == 503
+
+
+def test_token_without_organization_is_rejected(
+    anonymous_client: TestClient, tokens
+) -> None:
+    token = tokens.make(omit=("organization_id",))
+    response = call(anonymous_client, "GET", "/api/v1/me", token)
+
+    assert response.status_code == 200
+    assert response.json()["id"] == "user-1"
+    denied = call(anonymous_client, "GET", "/api/v1/partners", token)
+    assert denied.status_code == 403
+    assert denied.json()["detail"]["code"] == "no_organization"
+
+
+def test_token_with_invalid_organization_is_rejected(
+    anonymous_client: TestClient, tokens
+) -> None:
+    token = tokens.make(extra={"organization_id": "not-a-valid-uuid"})
+    response = call(anonymous_client, "GET", "/api/v1/me", token)
+
+    assert_401(response, "invalid_token")
