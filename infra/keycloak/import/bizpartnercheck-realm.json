@@ -144,6 +144,26 @@
       "standardFlowEnabled": false,
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
+            "defaultClientScopes": [
+        "basic",
+        "roles",
+        "kc-admin-api"
+      ],
+      "optionalClientScopes": []
+    },
+    {
+      "clientId": "bizpartnercheck-registration",
+      "name": "BizPartnerCheck Registration",
+      "description": "Dedicated service account for customer registration.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "local-registration-only-change-in-production",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
       "defaultClientScopes": [
         "basic",
         "roles",
@@ -209,6 +229,17 @@
         "realm-management": [
           "view-events",
           "view-users"
+        ]
+      }
+    },
+    {
+      "username": "service-account-bizpartnercheck-registration",
+      "enabled": true,
+      "serviceAccountClientId": "bizpartnercheck-registration",
+      "clientRoles": {
+        "realm-management": [
+          "manage-users",
+          "view-realm"
         ]
       }
     }

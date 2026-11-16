@@ -87,3 +87,16 @@ def test_vies_is_asked_with_the_organization_vat_number(
     client.post(f"/api/v1/partners/{partner.json()['id']}/checks/vies")
 
     assert fake_vies.requesters == ["ATU12345678"]
+
+
+def test_vat_number_of_another_organization_is_refused(
+    client: TestClient, db: Session, admin_token: str
+) -> None:
+    db.add(Organization(name="Other customer", vat_number="ATU12345675"))
+    db.flush()
+
+    response = set_vat_number(client, admin_token, "ATU12345675")
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "organization_vat_taken"
+    assert db.get(Organization, TEST_ORGANIZATION_ID).vat_number is None

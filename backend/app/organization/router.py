@@ -14,6 +14,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth import OrgAdmin
@@ -74,6 +75,7 @@ def get_organization(
     response_model=OrganizationRead,
     responses={
         403: {"description": "Not an organisation admin"},
+        409: {"description": "Another organisation already uses this VAT number"},
         422: {"description": "The VAT number does not have a valid format"},
     },
 )
@@ -95,6 +97,21 @@ def update_organization(
                 str(exc),
                 field="vat_number",
             ) from exc
+
+    if vat_number is not None:
+        taken = db.scalar(
+            select(Organization.id).where(
+                Organization.vat_number == vat_number,
+                Organization.id != organization_id,
+            )
+        )
+        if taken is not None:
+            raise api_error(
+                status.HTTP_409_CONFLICT,
+                "organization_vat_taken",
+                "Another organisation already uses this VAT number.",
+                field="vat_number",
+            )
 
     organization = _organization(db, organization_id)
     organization.vat_number = vat_number
