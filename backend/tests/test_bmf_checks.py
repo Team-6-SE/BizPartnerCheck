@@ -243,7 +243,7 @@ def test_partner_list_shows_latest_bmf_and_vies_result(
     client.post(f"/api/v1/partners/{partner['id']}/checks/vies")
     bmf = check_bmf(client, partner["id"])
 
-    listed = client.get("/api/v1/partners").json()[0]
+    listed = client.get("/api/v1/partners").json()["items"][0]
 
     assert listed["latest_bmf_check"] == bmf
     assert listed["latest_vies_check"]["source"] == "VIES"

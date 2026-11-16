@@ -294,3 +294,15 @@ def test_post_answer_with_valid_key_is_ok() -> None:
     )
 
     assert result.status == CheckStatus.OK
+
+
+def test_post_answer_invalid_without_user_error_is_finding() -> None:
+    # POST /check-vat-number answers "valid": false without any userError.
+    answer = {"valid": False, "requestIdentifier": "WAPIAAAAZ1B2C3D4"}
+    adapter, _ = make_adapter(answers(answer))
+
+    result = adapter.check(
+        CheckSubject(vat_number="ATU12345678", requester_vat="DE123456789")
+    )
+
+    assert result.status == CheckStatus.FINDING

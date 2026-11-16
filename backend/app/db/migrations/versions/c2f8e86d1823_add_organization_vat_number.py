@@ -1,7 +1,7 @@
 """add organization vat number
 
 Revision ID: c2f8e86d1823
-Revises: 28c8865b2eef
+Revises: e3d033729051
 Create Date: 2026-11-12 22:47:01.105686
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'c2f8e86d1823'
-down_revision: Union[str, Sequence[str], None] = '28c8865b2eef'
+down_revision: Union[str, Sequence[str], None] = 'e3d033729051'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

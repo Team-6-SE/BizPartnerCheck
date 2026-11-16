@@ -105,6 +105,7 @@ class TokenFactory:
             "exp": now + expires_in,
             "email": email,
             "name": name,
+            "organization_id": "00000000-0000-0000-0000-000000000001",
         }
         claims.update(extra or {})
         for claim in omit:

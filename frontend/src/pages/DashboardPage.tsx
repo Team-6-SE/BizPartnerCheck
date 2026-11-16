@@ -23,7 +23,7 @@ export function DashboardPage() {
   useEffect(() => {
     let cancelled = false
     listPartners()
-      .then((partners) => !cancelled && setPartnerCount(partners.length))
+     .then((result) => !cancelled && setPartnerCount(result.total))
       .catch(() => !cancelled && setPartnerCount('error'))
     return () => {
       cancelled = true

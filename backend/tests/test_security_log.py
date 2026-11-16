@@ -346,6 +346,11 @@ class FakeKeycloak:
             "admin-1": "admin@example.com",
         }
         self.calls: list[tuple[str, int, int]] = []
+        self.organizations = {
+            "user-1": TEST_ORGANIZATION_ID,
+            "u-2": TEST_ORGANIZATION_ID,
+            "admin-1": TEST_ORGANIZATION_ID,
+        }
         self.down = False
 
     def _serve(
@@ -378,6 +383,11 @@ class FakeKeycloak:
 
     def user_email(self, user_id: str) -> str | None:
         return self.emails.get(user_id)
+
+    def user_organization_id(self, user_id: str | None) -> uuid.UUID | None:
+        if not user_id:
+            return None
+        return self.organizations.get(user_id)
 
 
 @pytest.fixture
@@ -978,3 +988,171 @@ def test_export_uses_filters_and_is_logged(admin: TestClient, db: Session) -> No
         "/api/v1/security-events", params={"event_type": "DATA_EXPORTED"}
     ).json()["items"]
     assert items[0]["actor_email"] == "admin@example.com"
+
+
+def test_deleted_user_keeps_organization(db: Session, keycloak: FakeKeycloak) -> None:
+    keycloak.admin_events_ = [
+        admin_event(
+            "USER",
+            "CREATE",
+            "users/user-1",
+            {
+                "email": "anna@example.com",
+                "attributes": {"organization_id": [str(TEST_ORGANIZATION_ID)]},
+            },
+        ),
+        admin_event("USER", "DELETE", "users/user-1"),
+    ]
+
+    # Simulate a user who no longer exists in Keycloak.
+    keycloak.organizations.pop("user-1", None)
+
+    sync_keycloak_events(db, keycloak)
+
+    rows = stored(db)
+    user_events = [
+        row
+        for row in rows
+        if row.event_type in {EventType.USER_CREATED, EventType.USER_DELETED}
+    ]
+
+    assert len(user_events) == 2
+    assert all(row.organization_id == TEST_ORGANIZATION_ID for row in user_events)
+
+
+def test_deleted_user_after_separate_sync_preserves_organisation(
+    db: Session, keycloak: FakeKeycloak
+) -> None:
+    keycloak.admin_events_ = [
+        admin_event(
+            "USER",
+            "CREATE",
+            "users/user-1",
+            {
+                "email": "anna@example.com",
+                "attributes": {"organization_id": [str(TEST_ORGANIZATION_ID)]},
+            },
+        )
+    ]
+    first = sync_keycloak_events(db, keycloak)
+    assert first.error is None
+    assert any(row.event_type == EventType.USER_CREATED for row in stored(db))
+
+    # The creation was persisted in a previous sync. Keycloak now knows no user.
+    keycloak.organizations.pop("user-1", None)
+    keycloak.emails.pop("user-1", None)
+    keycloak.admin_events_.append(
+        admin_event("USER", "DELETE", "users/user-1", time=NOW_MS + 2000)
+    )
+    keycloak.user_events = [user_event("LOGIN", time=NOW_MS + 1000)]
+    result = sync_keycloak_events(db, keycloak)
+    assert result.error is None
+    affected = [
+        row
+        for row in stored(db)
+        if row.event_type
+        in {EventType.USER_CREATED, EventType.USER_DELETED, EventType.SIGN_IN}
+    ]
+    assert len(affected) == 3
+    assert all(row.organization_id == TEST_ORGANIZATION_ID for row in affected)
+    assert "attributes" not in affected[0].details
+
+
+def test_user_profile_lookup_is_shared_for_email_and_organisation() -> None:
+    user_gets = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal user_gets
+        if request.url.path.endswith("/token"):
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 300})
+        if "/users/" in request.url.path:
+            user_gets += 1
+            return httpx.Response(
+                200,
+                json={
+                    "email": "anna@example.com",
+                    "attributes": {"organization_id": [str(TEST_ORGANIZATION_ID)]},
+                },
+            )
+        return httpx.Response(200, json=[])
+
+    client = keycloak_client(handler)
+    for _ in range(7):
+        assert client.user_email("user-1") == "anna@example.com"
+        assert client.user_organization_id("user-1") == TEST_ORGANIZATION_ID
+    assert user_gets == 1
+    client.clear_user_cache()
+    assert client.user_email("user-1") == "anna@example.com"
+    assert user_gets == 2
+
+
+def test_security_events_and_export_are_isolated_by_token(
+    anonymous_client: TestClient, db: Session, tokens
+) -> None:
+    other = Organization(name="Token isolation customer")
+    db.add(other)
+    db.flush()
+    add_event(db, summary="org one")
+    add_event(db, summary="org two", organization_id=other.id)
+
+    def as_org(org_id: uuid.UUID) -> dict[str, str]:
+        token = tokens.make(
+            extra={
+                "organization_id": str(org_id),
+                "realm_access": {"roles": ["org-admin"]},
+            }
+        )
+        return {"Authorization": f"Bearer {token}"}
+
+    for org_id, own, other_label in (
+        (TEST_ORGANIZATION_ID, "org one", "org two"),
+        (other.id, "org two", "org one"),
+    ):
+        events = anonymous_client.get("/api/v1/security-events", headers=as_org(org_id))
+        assert events.status_code == 200
+        assert [item["summary"] for item in events.json()["items"]] == [own]
+        export = anonymous_client.get(
+            "/api/v1/security-events/export", headers=as_org(org_id)
+        )
+        assert export.status_code == 200
+        csv_text = export.content.decode("utf-8-sig")
+        assert own in csv_text
+        assert other_label not in csv_text
+
+
+def test_deleted_user_fallback_ignores_admin_actions_in_other_organisations(
+    db: Session, keycloak: FakeKeycloak
+) -> None:
+    """An admin's work in org B must not reassign their own deleted account to B."""
+    other = Organization(name="Other admin-managed organisation")
+    db.add(other)
+    db.flush()
+
+    own_sign_in = SecurityEvent(
+        organization_id=TEST_ORGANIZATION_ID,
+        occurred_at=datetime(2026, 11, 5, 10, 0, tzinfo=UTC),
+        event_type=EventType.SIGN_IN.value,
+        actor_id="user-1",
+        subject_id="user-1",
+        source=SOURCE_KEYCLOAK,
+        details={"summary": "Previous sign-in"},
+    )
+    cross_org_action = SecurityEvent(
+        organization_id=other.id,
+        occurred_at=datetime(2026, 11, 5, 10, 1, tzinfo=UTC),
+        event_type=EventType.USER_UPDATED.value,
+        actor_id="user-1",
+        subject_id="u-2",
+        source=SOURCE_KEYCLOAK,
+        details={"summary": "Admin changed a different organisation's user"},
+    )
+    db.add_all([own_sign_in, cross_org_action])
+    db.flush()
+
+    keycloak.organizations.pop("user-1", None)
+    keycloak.emails.pop("user-1", None)
+    keycloak.user_events = [user_event("LOGOUT", time=NOW_MS + 120000)]
+    result = sync_keycloak_events(db, keycloak)
+    assert result.error is None
+    sign_out = next(row for row in stored(db) if row.event_type == EventType.SIGN_OUT)
+    assert sign_out.organization_id == TEST_ORGANIZATION_ID

@@ -125,7 +125,7 @@ class ViesAdapter(SourceAdapter):
         user_error = raw.get("userError")
         if is_valid is True and user_error in (None, "VALID"):
             return Interpretation(CheckStatus.OK)
-        if is_valid is False and user_error == "INVALID":
+        if is_valid is False and user_error in (None, "INVALID"):
             return Interpretation(CheckStatus.FINDING)
         # Only temporary problems are asked again; INVALID_REQUESTER_INFO and other
         # permanent answers would come back the same.
