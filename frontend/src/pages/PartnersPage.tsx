@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
+import { Link } from 'react-router'
 import {
   Building2Icon,
   CircleCheckIcon,
@@ -10,11 +11,15 @@ import {
 
 import {
   ApiError,
+  archivePartner,
   createPartner,
+  listArchivedPartners,
   listPartners,
   partnerLabel,
+  restorePartner,
   runBmfCheck,
   runViesCheck,
+  updatePartner,
   type CheckResult,
   type CheckStatus,
   type Partner,
@@ -31,32 +36,20 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from '@/components/ui/empty'
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
-type LoadState =
-  | { status: 'loading' }
-  | { status: 'ready' }
-  | { status: 'error'; message: string }
+type LoadState = { status: 'loading' } | { status: 'ready' } | { status: 'error'; message: string }
 
-const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+const dateFormat = new Intl.DateTimeFormat(undefined, {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+})
 
 function errorMessage(error: unknown): string {
   return error instanceof ApiError ? error.message : 'Something went wrong. Please try again.'
@@ -64,11 +57,31 @@ function errorMessage(error: unknown): string {
 
 export function PartnersPage() {
   const [partners, setPartners] = useState<Partner[]>([])
+  const [archivedPartners, setArchivedPartners] = useState<Partner[]>([])
   const [loadState, setLoadState] = useState<LoadState>({ status: 'loading' })
   const [reloadKey, setReloadKey] = useState(0)
 
+  // Search, sorting and pagination apply to active partners.
+  const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const [pageSize] = useState(20)
+  const [sortBy, setSortBy] = useState('created_at')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
+  const [totalPartners, setTotalPartners] = useState(0)
+  const [totalPages, setTotalPages] = useState(0)
+
+  const [showArchived, setShowArchived] = useState(false)
+  const visiblePartners = showArchived ? archivedPartners : partners
+
+  // Edit form state.
+  const [editingPartnerId, setEditingPartnerId] = useState<string | null>(null)
+  const [editedCompanyName, setEditedCompanyName] = useState('')
+  const [savingEdit, setSavingEdit] = useState(false)
+
+  // Add-partner form state.
   const [vatNumber, setVatNumber] = useState('')
   const [registerNumber, setRegisterNumber] = useState('')
+  const [companyName, setCompanyName] = useState('')
   // Errors are shown at the field the backend names (code, message, field).
   const [vatError, setVatError] = useState('')
   const [registerError, setRegisterError] = useState('')
@@ -86,46 +99,84 @@ export function PartnersPage() {
   const registerInputRef = useRef<HTMLInputElement>(null)
   // Blocks a second submit (e.g. a fast double Enter) before React re-renders.
   const submittingRef = useRef(false)
+
   const inputId = useId()
   const hintId = useId()
   const errorId = useId()
   const registerInputId = useId()
   const registerHintId = useId()
   const registerErrorId = useId()
+  const companyNameId = useId()
 
+  // Load the current page of active partners.
   useEffect(() => {
     let cancelled = false
-    listPartners()
+    setLoadState({ status: 'loading' })
+
+    listPartners({ search, page, pageSize, sortBy, sortOrder })
       .then((result) => {
         if (cancelled) return
-        // Keep partners added while the list was loading.
-        setPartners((current) => {
-          const loadedIds = new Set(result.map((partner) => partner.id))
-          return [...current.filter((partner) => !loadedIds.has(partner.id)), ...result]
-        })
+        setPartners(result.items)
+        setTotalPartners(result.total)
+        setTotalPages(result.total_pages)
         setLoadState({ status: 'ready' })
       })
       .catch((error: unknown) => {
-        if (!cancelled) setLoadState({ status: 'error', message: errorMessage(error) })
+        if (cancelled) return
+        setLoadState({ status: 'error', message: errorMessage(error) })
       })
+
     return () => {
       cancelled = true
     }
-  }, [reloadKey])
+  }, [search, page, pageSize, sortBy, sortOrder, reloadKey])
+
+  // Load archived partners when the archived tab is selected.
+  useEffect(() => {
+    if (!showArchived) return
+
+    let cancelled = false
+    listArchivedPartners()
+      .then((result) => {
+        if (!cancelled) setArchivedPartners(result)
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setAnnouncement(`Could not load archived partners. ${errorMessage(error)}`)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [showArchived, reloadKey])
+
+  function reloadLists() {
+    setReloadKey((key) => key + 1)
+  }
 
   function retryLoading() {
     setLoadState({ status: 'loading' })
-    setReloadKey((key) => key + 1)
+    reloadLists()
+  }
+
+  /** Puts a changed partner into both lists (active and archived). */
+  function updateInLists(partnerId: string, change: (partner: Partner) => Partner) {
+    const apply = (current: Partner[]) =>
+      current.map((item) => (item.id === partnerId ? change(item) : item))
+    setPartners(apply)
+    setArchivedPartners(apply)
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (submittingRef.current) return
 
-        const vat = vatNumber.trim()
+    const vat = vatNumber.trim()
     const register = registerNumber.trim()
+
     if (!vat && !register) {
-      setVatError('Please enter a VAT number (e.g. ATU12345678) or a company register number (e.g. 123456a).')
+      setVatError(
+        'Please enter a VAT number (e.g. ATU12345678) or a company register number (e.g. 123456a).',
+      )
       setRegisterError('')
       inputRef.current?.focus()
       return
@@ -135,14 +186,24 @@ export function PartnersPage() {
     setSubmitting(true)
     setVatError('')
     setRegisterError('')
-    // Where the cursor goes afterwards: the wrong field, or the first field for the next partner.
+
     let focusTarget = inputRef
+
     try {
-      const partner = await createPartner({ vatNumber: vat, companyRegisterNumber: register })
-      setPartners((current) => [partner, ...current])
+      const partner = await createPartner({
+        vatNumber: vat,
+        companyRegisterNumber: register,
+        companyName: companyName.trim(),
+      })
+
       setNewPartnerId(partner.id)
       setVatNumber('')
       setRegisterNumber('')
+      setCompanyName('')
+      setPage(1)
+      setSearch('')
+      setShowArchived(false)
+      reloadLists()
       setAnnouncement(`Partner ${partnerLabel(partner)} added.`)
     } catch (error) {
       if (error instanceof ApiError && error.field === 'company_register_number') {
@@ -156,7 +217,6 @@ export function PartnersPage() {
       setSubmitting(false)
       focusTarget.current?.focus()
     }
-    
   }
 
   async function handleCheck(partner: Partner) {
@@ -178,9 +238,7 @@ export function PartnersPage() {
       if (partner.vat_number) {
         try {
           const result = await runViesCheck(partner.id)
-          setPartners((current) =>
-            current.map((p) => (p.id === partner.id ? { ...p, latest_vies_check: result } : p)),
-          )
+          updateInLists(partner.id, (item) => ({ ...item, latest_vies_check: result }))
           fresh.push(result.id)
           said.push(`VIES: ${STATUS_LABELS[result.status]}.`)
         } catch (error) {
@@ -189,9 +247,7 @@ export function PartnersPage() {
       }
       try {
         const result = await runBmfCheck(partner.id)
-        setPartners((current) =>
-          current.map((p) => (p.id === partner.id ? { ...p, latest_bmf_check: result } : p)),
-        )
+        updateInLists(partner.id, (item) => ({ ...item, latest_bmf_check: result }))
         fresh.push(result.id)
         said.push(`BMF list: ${BMF_LABELS[result.status]}. ${result.message}`)
       } catch (error) {
@@ -206,11 +262,63 @@ export function PartnersPage() {
     }
   }
 
+  async function handleArchive(partner: Partner) {
+    try {
+      await archivePartner(partner.id)
+      setAnnouncement(`${partnerLabel(partner)} archived.`)
+      reloadLists()
+    } catch (error) {
+      setAnnouncement(`Could not archive partner. ${errorMessage(error)}`)
+    }
+  }
+
+  async function handleRestore(partner: Partner) {
+    try {
+      await restorePartner(partner.id)
+      setAnnouncement(`${partnerLabel(partner)} restored.`)
+      reloadLists()
+    } catch (error) {
+      setAnnouncement(`Could not restore partner. ${errorMessage(error)}`)
+    }
+  }
+
+  async function handleSaveEdit(partner: Partner) {
+    try {
+      setSavingEdit(true)
+      const updated = await updatePartner(partner.id, editedCompanyName.trim() || null)
+      // The update answer has no check results: keep the ones already shown.
+      updateInLists(partner.id, (item) => ({
+        ...updated,
+        latest_vies_check: item.latest_vies_check,
+        latest_bmf_check: item.latest_bmf_check,
+      }))
+      setEditingPartnerId(null)
+      setEditedCompanyName('')
+      setAnnouncement(`${partnerLabel(updated)} updated.`)
+    } catch (error) {
+      setAnnouncement(`Could not update partner. ${errorMessage(error)}`)
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
+  function archiveButton(partner: Partner) {
+    return (
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => (showArchived ? handleRestore(partner) : handleArchive(partner))}
+      >
+        {showArchived ? 'Restore' : 'Archive'}
+      </Button>
+    )
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Partners"
-        description="Add a partner by its VAT number and check it with the EU VIES service and the BMF list of fake companies."
+        description="Add a partner by its VAT number or company register number and check it with the EU VIES service and the BMF list of fake companies."
       />
 
       <Card>
@@ -218,10 +326,10 @@ export function PartnersPage() {
           <CardTitle>
             <h2>Add Partner</h2>
           </CardTitle>
-          <CardDescription>The number is checked for the right format before it is saved.</CardDescription>
+          <CardDescription>The numbers are checked for the right format before they are saved.</CardDescription>
         </CardHeader>
         <CardContent>
-                    <form onSubmit={handleSubmit} noValidate>
+          <form onSubmit={handleSubmit} noValidate>
             <FieldGroup>
               <div className="grid gap-6 sm:grid-cols-2">
                 <Field data-invalid={vatError ? true : undefined}>
@@ -271,6 +379,18 @@ export function PartnersPage() {
                   </FieldDescription>
                   <FieldError id={registerErrorId}>{registerError}</FieldError>
                 </Field>
+                <Field>
+                  <FieldLabel htmlFor={companyNameId}>Company name</FieldLabel>
+                  <Input
+                    id={companyNameId}
+                    name="company_name"
+                    value={companyName}
+                    onChange={(event) => setCompanyName(event.target.value)}
+                    placeholder="Example GmbH"
+                    autoComplete="organization"
+                  />
+                  <FieldDescription>Optional: the partner's company name.</FieldDescription>
+                </Field>
               </div>
               <div>
                 <Button type="submit" disabled={submitting} className="max-sm:w-full sm:min-w-32">
@@ -289,21 +409,74 @@ export function PartnersPage() {
             <h2>Partners</h2>
           </CardTitle>
           <CardDescription>
-            All partners of your organization, newest first. “Check” asks VIES whether the VAT
-            number is valid and compares the partner with the BMF list of fake companies.
+            All partners of your organization. “Check” asks VIES whether the VAT number is valid and
+            compares the partner with the BMF list of fake companies.
           </CardDescription>
-          {loadState.status === 'ready' && partners.length > 0 && (
+          {loadState.status === 'ready' && (
             <CardAction>
               <Badge variant="secondary" className="tabular-nums">
-                {partners.length}
+                {showArchived ? archivedPartners.length : totalPartners}
               </Badge>
             </CardAction>
           )}
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex flex-col gap-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Input
+              placeholder="Search company name, VAT number or FN…"
+              value={search}
+              onChange={(event) => {
+                setSearch(event.target.value)
+                setPage(1)
+              }}
+              aria-label="Search partners"
+              disabled={showArchived}
+            />
+            <div className="flex gap-2">
+              <NativeSelect
+                className="w-full"
+                value={sortBy}
+                onChange={(event) => setSortBy(event.target.value)}
+                aria-label="Sort partners by"
+                disabled={showArchived}
+              >
+                <NativeSelectOption value="created_at">Date added</NativeSelectOption>
+                <NativeSelectOption value="company_name">Company name</NativeSelectOption>
+                <NativeSelectOption value="vat_number">VAT number</NativeSelectOption>
+                <NativeSelectOption value="company_register_number">Register number</NativeSelectOption>
+              </NativeSelect>
+              <Button
+                variant="outline"
+                disabled={showArchived}
+                onClick={() => setSortOrder((current) => (current === 'asc' ? 'desc' : 'asc'))}
+              >
+                {sortOrder === 'asc' ? 'Ascending ↑' : 'Descending ↓'}
+              </Button>
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <Button
+              variant={showArchived ? 'outline' : 'default'}
+              size="sm"
+              aria-pressed={!showArchived}
+              onClick={() => setShowArchived(false)}
+            >
+              Active Partners
+            </Button>
+            <Button
+              variant={showArchived ? 'default' : 'outline'}
+              size="sm"
+              aria-pressed={showArchived}
+              onClick={() => setShowArchived(true)}
+            >
+              Archived Partners
+            </Button>
+          </div>
+
           {loadState.status === 'loading' && <PartnerListSkeleton />}
 
-          {loadState.status === 'error' && (
+          {loadState.status === 'error' && !showArchived && (
             <Alert variant="destructive">
               <AlertTitle>Could Not Load Partners</AlertTitle>
               <AlertDescription>{loadState.message}</AlertDescription>
@@ -315,115 +488,213 @@ export function PartnersPage() {
             </Alert>
           )}
 
-          {loadState.status === 'ready' && partners.length === 0 && (
+          {loadState.status === 'ready' && visiblePartners.length === 0 && (
             <Empty className="border">
               <EmptyHeader>
                 <EmptyMedia variant="icon">
                   <Building2Icon />
                 </EmptyMedia>
-                <EmptyTitle>No Partners Yet</EmptyTitle>
-                <EmptyDescription>Add the first partner with its VAT number above.</EmptyDescription>
+                <EmptyTitle>
+                  {showArchived ? 'No Archived Partners' : search ? 'No Matching Partners' : 'No Partners Yet'}
+                </EmptyTitle>
+                <EmptyDescription>
+                  {showArchived
+                    ? 'Archived partners will appear here.'
+                    : search
+                      ? 'Try a different search term.'
+                      : 'Add the first partner with its VAT number or company register number above.'}
+                </EmptyDescription>
               </EmptyHeader>
             </Empty>
           )}
 
-          {loadState.status === 'ready' && partners.length > 0 && (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Partner</TableHead>
-                  <TableHead>VIES result</TableHead>
-                  <TableHead>BMF list</TableHead>
-                  <TableHead className="text-right max-xl:hidden">Added</TableHead>
-                  <TableHead className="text-right max-sm:hidden">
-                    <span className="sr-only">Actions</span>
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {partners.map((partner) => {
-                  const check = partner.latest_vies_check
-                  const bmfCheck = partner.latest_bmf_check
-                  const errors = checkErrors[partner.id]
-                  const checking = checkingIds.has(partner.id)
-                  const companyName = check?.status === 'OK' ? check.company_name : null
-                  return (
-                    <TableRow
-                      key={partner.id}
-                      data-new={partner.id === newPartnerId ? true : undefined}
-                      className="data-new:animate-row-enter motion-reduce:data-new:animate-row-highlight"
+          {loadState.status === 'ready' && visiblePartners.length > 0 && (
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Partner</TableHead>
+                    <TableHead>VIES result</TableHead>
+                    <TableHead>BMF list</TableHead>
+                    <TableHead className="text-right max-sm:hidden">
+                      <span className="sr-only">Actions</span>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {visiblePartners.map((partner) => {
+                    const check = partner.latest_vies_check
+                    const bmfCheck = partner.latest_bmf_check
+                    const errors = checkErrors[partner.id]
+                    const checking = checkingIds.has(partner.id)
+                    const viesCompanyName = check?.status === 'OK' ? check.company_name : null
+                    const viesAddress = check?.status === 'OK' ? check.address : null
+
+                    return (
+                      <TableRow
+                        key={partner.id}
+                        data-new={partner.id === newPartnerId ? true : undefined}
+                        className="data-new:animate-row-enter motion-reduce:data-new:animate-row-highlight"
+                      >
+                        <TableCell className="align-top">
+                          {partner.vat_number && (
+                            <div className="font-mono tracking-wide">{partner.vat_number}</div>
+                          )}
+                          {partner.company_register_number && (
+                            <div
+                              className={
+                                partner.vat_number
+                                  ? 'font-mono text-xs tracking-wide text-muted-foreground'
+                                  : 'font-mono tracking-wide'
+                              }
+                            >
+                              <span className="sr-only">Company register number </span>
+                              FN {partner.company_register_number}
+                            </div>
+                          )}
+
+                          {editingPartnerId === partner.id ? (
+                            <div className="mt-2 flex flex-col gap-2">
+                              <Input
+                                value={editedCompanyName}
+                                onChange={(event) => setEditedCompanyName(event.target.value)}
+                                placeholder="Company name"
+                                aria-label="Edit company name"
+                              />
+                              <div className="flex gap-2">
+                                <Button size="sm" disabled={savingEdit} onClick={() => handleSaveEdit(partner)}>
+                                  {savingEdit ? 'Saving…' : 'Save'}
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={savingEdit}
+                                  onClick={() => {
+                                    setEditingPartnerId(null)
+                                    setEditedCompanyName('')
+                                  }}
+                                >
+                                  Cancel
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="mt-2 flex flex-col items-start gap-2">
+                              {partner.company_name && <div className="text-sm">{partner.company_name}</div>}
+                              <div className="text-xs text-muted-foreground tabular-nums">
+                                Added{' '}
+                                <time dateTime={partner.created_at}>
+                                  {dateFormat.format(new Date(partner.created_at))}
+                                </time>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    setEditingPartnerId(partner.id)
+                                    setEditedCompanyName(partner.company_name ?? '')
+                                  }}
+                                >
+                                  Edit
+                                </Button>
+                                {archiveButton(partner)}
+                              </div>
+                              <Link
+                                to={`/partners/${partner.id}`}
+                                className="text-sm font-medium underline underline-offset-4 hover:text-primary"
+                              >
+                                View details
+                              </Link>
+                            </div>
+                          )}
+
+                          {viesCompanyName && (
+                            <div
+                              className="mt-2 max-w-56 truncate text-xs text-muted-foreground"
+                              title={viesCompanyName}
+                            >
+                              VIES: {viesCompanyName}
+                            </div>
+                          )}
+                          {viesAddress && (
+                            <div className="mt-1 max-w-56 whitespace-pre-line text-xs text-muted-foreground">
+                              {viesAddress}
+                            </div>
+                          )}
+
+                          {/* Small screens: no room for an extra column, so the button sits here. */}
+                          <CheckButton
+                            className="mt-2 sm:hidden"
+                            partner={partner}
+                            checking={checking}
+                            onCheck={handleCheck}
+                          />
+                        </TableCell>
+                        <TableCell className="min-w-44 align-top whitespace-normal">
+                          {check ? (
+                            <CheckResultView
+                              check={check}
+                              labels={STATUS_LABELS}
+                              fresh={freshCheckIds.has(check.id)}
+                            />
+                          ) : partner.vat_number ? (
+                            <span className="text-muted-foreground">Not checked yet</span>
+                          ) : (
+                            <span className="text-muted-foreground">No VAT number, VIES does not apply</span>
+                          )}
+                          {errors?.map((error) => (
+                            <p key={error} className="mt-1 text-xs text-destructive">
+                              Check could not run: {error}
+                            </p>
+                          ))}
+                        </TableCell>
+                        <TableCell className="min-w-52 align-top whitespace-normal">
+                          {bmfCheck ? (
+                            <CheckResultView
+                              check={bmfCheck}
+                              labels={BMF_LABELS}
+                              fresh={freshCheckIds.has(bmfCheck.id)}
+                            />
+                          ) : (
+                            <span className="text-muted-foreground">Not checked yet</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right align-top max-sm:hidden">
+                          <CheckButton partner={partner} checking={checking} onCheck={handleCheck} />
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+
+              {!showArchived && totalPages > 1 && (
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm text-muted-foreground">
+                    Page {page} of {totalPages} ({totalPartners} partners)
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={page <= 1}
+                      onClick={() => setPage((current) => current - 1)}
                     >
-                      <TableCell className="align-top">
-                                                {partner.vat_number && (
-                          <div className="font-mono tracking-wide">{partner.vat_number}</div>
-                        )}
-                        {partner.company_register_number && (
-                          <div
-                            className={
-                              partner.vat_number
-                                ? 'font-mono text-xs tracking-wide text-muted-foreground'
-                                : 'font-mono tracking-wide'
-                            }
-                          >
-                            <span className="sr-only">Company register number </span>
-                            FN {partner.company_register_number}
-                          </div>
-                        )}
-                        {companyName && (
-                          <div className="max-w-56 truncate text-xs text-muted-foreground" title={companyName}>
-                            {companyName}
-                          </div>
-                        )}
-                        {/* Small screens: no room for an extra column, so the button sits here. */}
-                        <CheckButton
-                          className="mt-2 sm:hidden"
-                          partner={partner}
-                          checking={checking}
-                          onCheck={handleCheck}
-                        />
-                      </TableCell>
-                      <TableCell className="min-w-44 align-top whitespace-normal">
-                        {check ? (
-                          <CheckResultView
-                            check={check}
-                            labels={STATUS_LABELS}
-                            fresh={freshCheckIds.has(check.id)}
-                          />
-                        ) : partner.vat_number ? (
-                          <span className="text-muted-foreground">Not checked yet</span>
-                        ) : (
-                          <span className="text-muted-foreground">No VAT number, VIES does not apply</span>
-                        )}
-                        {errors?.map((error) => (
-                          <p key={error} className="mt-1 text-xs text-destructive">
-                            Check could not run: {error}
-                          </p>
-                        ))}
-                      </TableCell>
-                      <TableCell className="min-w-52 align-top whitespace-normal">
-                        {bmfCheck ? (
-                          <CheckResultView
-                            check={bmfCheck}
-                            labels={BMF_LABELS}
-                            fresh={freshCheckIds.has(bmfCheck.id)}
-                          />
-                        ) : (
-                          <span className="text-muted-foreground">Not checked yet</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right align-top text-muted-foreground tabular-nums max-xl:hidden">
-                        <time dateTime={partner.created_at}>
-                          {dateFormat.format(new Date(partner.created_at))}
-                        </time>
-                      </TableCell>
-                      <TableCell className="text-right align-top max-sm:hidden">
-                        <CheckButton partner={partner} checking={checking} onCheck={handleCheck} />
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table>
+                      Previous
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={page >= totalPages}
+                      onClick={() => setPage((current) => current + 1)}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
@@ -446,6 +717,8 @@ function CheckButton({
   onCheck: (partner: Partner) => void
   className?: string
 }) {
+  // Archived partners are not checked (the backend answers 404 for them).
+  if (partner.is_archived) return null
   // Every partner can be checked against the BMF list; VIES only with a VAT number.
   const sources = partner.vat_number ? 'in VIES and the BMF list' : 'in the BMF list'
   return (
@@ -520,6 +793,11 @@ function CheckResultView({
           {dateFormat.format(new Date(check.checked_at))}
         </time>
       </div>
+      {check.consultation_number && (
+        <p className="text-xs text-muted-foreground">
+          Consultation number <span className="font-mono">{check.consultation_number}</span>
+        </p>
+      )}
       {(check.status !== 'OK' || stale) && (
         <p className="text-xs text-muted-foreground">{check.message}</p>
       )}

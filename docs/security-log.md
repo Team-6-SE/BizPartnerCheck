@@ -137,8 +137,11 @@ COMMIT;
   (unique `source` + `external_id`), so running twice or in parallel is harmless.
 - If Keycloak cannot be reached, the page still shows what is stored, with the warning "Newest sign-ins may be
   missing".
-- Organisation of an entry: the organisation of the user it concerns. Until S2.3 every user belongs to the test
-  organisation. Failed sign-ins with an unknown e-mail belong to no organisation and are not shown to customers.
+- Organisation of an entry: the organisation assigned to the affected user in Keycloak. The
+  synchronisation caches each user lookup for one run; deleted users are resolved from the
+  last known organisation recorded in the append-only security log or their creation event.
+  Failed sign-ins with unknown users have no organisation and are not shown to customers.
+  Only the organisation UUID from a user-creation event is copied, not the full profile.
 
 ### API
 

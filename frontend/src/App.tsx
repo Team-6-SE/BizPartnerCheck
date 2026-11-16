@@ -20,6 +20,7 @@ const OrganizationSettingsPage = lazy(() => import('@/pages/OrganizationSettings
 const OrganizationsPage = lazy(() => import('@/pages/OrganizationsPage').then((m) => ({ default: m.OrganizationsPage })))
 const SecurityLogPage = lazy(() => import('@/pages/SecurityLogPage').then((m) => ({ default: m.SecurityLogPage })))
 const PartnersPage = lazy(() => import('@/pages/PartnersPage').then((m) => ({ default: m.PartnersPage })))
+const PartnerDetailPage = lazy(() => import('@/pages/PartnerDetailPage').then((m) => ({ default: m.PartnerDetailPage })))
 const SignInPage = lazy(() => import('@/pages/SignInPage').then((m) => ({ default: m.SignInPage })))
 const RegistrationPage = lazy(() =>
   import('@/pages/RegistrationPage').then((m) => ({ default: m.RegistrationPage })),
@@ -66,9 +67,10 @@ function App() {
             >
               <Route index element={<DashboardPage />} />
               <Route path="checks" element={<HistoryPage />} />
+              <Route path="partners" element={<PartnersPage />} />
               <Route path="checks/new" element={<NewCheckPage />} />
               <Route path="checks/:checkId" element={<CheckResultPage />} />
-              <Route path="partners" element={<PartnersPage />} />
+              <Route path="partners/:partnerId" element={<PartnerDetailPage />} />
               <Route path="settings/api-tokens" element={<ApiTokensPage />} />
               <Route path="settings/users" element={<UsersPage />} />
               <Route path="settings/organization" element={<OrganizationSettingsPage />} />

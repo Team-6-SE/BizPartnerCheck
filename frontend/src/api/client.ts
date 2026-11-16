@@ -19,6 +19,7 @@ const SERVER_UNAVAILABLE = 'The server is not reachable. Is the backend running?
 const TIMEOUT_MS = 15_000
 
 const SESSION_ENDED = 'Your session has ended. Please sign in again.'
+const NO_ORGANIZATION = 'Your account is not assigned to an organisation. Please contact your administrator.'
 // Shown instead of sending the user to Keycloak again and again (see docs/authentication.md).
 const SIGN_IN_NOT_ACCEPTED = 'The server does not accept your sign-in right now. Please try again in a moment.'
 
@@ -63,7 +64,11 @@ async function authorizedFetch(path: string, init: RequestInit | undefined, time
   }
 
   if (!response.ok) {
-    throw await toApiError(response)
+    const error = await toApiError(response)
+    if (response.status === 403 && error.code === 'no_organization') {
+      throw new ApiError(NO_ORGANIZATION, 403, error.code)
+    }
+    throw error
   }
   return response
 }

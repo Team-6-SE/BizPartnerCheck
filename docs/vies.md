@@ -35,6 +35,19 @@ Greece is `EL` and Northern Ireland `XI`, as in VIES. Example answer (shortened)
 Important: VIES also sends `isValid: false` when the country's tax office was not available. So
 `isValid: false` alone does **not** mean invalid. Anything we cannot read clearly is `ERROR`, never `OK`.
 
+**Address and consultation number (SCRUM-40).** A valid result also shows the registered name and
+address VIES returns. If the organisation has set its **own VAT number** (`organizations.vat_number`,
+page *Settings*, `PUT /api/v1/organization`, org admins only), it is sent as the requester with
+`POST {base_url}/check-vat-number` instead of the `GET` above. VIES then answers with a
+`requestIdentifier`, the **consultation number**: proof towards the tax office that the check was made.
+It is stored with the raw answer and shown as `consultation_number`. Without an own VAT number the
+check works the same, just without a consultation number.
+
+The own VAT number is format-checked before it is saved (`validate_vat_number`): a wrong requester
+makes VIES refuse **every** check with `INVALID_REQUESTER_INFO`. That answer is `ERROR` with the message
+"VIES rejected your organisation's VAT number. Please check it in the organisation settings." It is not
+asked again and does not say "try again later": only fixing the setting helps.
+
 **Time limits** (from `docs/architecture.md`): 8 s per call, max. 2 retries, 30 s in total. We only ask again
 for temporary problems (timeout, not reachable, HTTP 5xx/429, `MS_UNAVAILABLE`, `TIMEOUT`,
 `SERVICE_UNAVAILABLE`, `*_MAX_CONCURRENT_REQ*`), with a short pause (0.5 s, 1 s). The limits are shared by all
@@ -48,7 +61,11 @@ latest result. `ERROR` results are stored too: they show that the number could n
 
 - `POST /api/v1/partners/{id}/checks/vies` – asks VIES now, stores and returns the result (`201`).
   `ERROR` is a normal result, not an HTTP error. Unknown partner or partner of another organization → `404`.
-- `GET /api/v1/partners` – each partner has `latest_vies_check` (or `null`).
+- `GET /api/v1/partners` – each partner has `latest_vies_check` (or `null`), with `address` and
+  `consultation_number` when VIES returned them.
+- `GET /api/v1/organization` – name and own VAT number of the organisation (every signed-in user).
+- `PUT /api/v1/organization` – set or remove the own VAT number (`{"vat_number": "ATU12345678"}`,
+  org admins only; `422 invalid_vat_format` for a wrong format, empty or `null` removes it).
 
 **Configuration:** `VIES_BASE_URL` (optional) points to another server, e.g. a stub for staging or load tests.
 Default is the EU Commission service. `VIES_ADAPTER=fake-ok` (or `fake-finding`, `fake-timeout`, `fake-malformed`)
@@ -67,5 +84,6 @@ uses a fake without any network, e.g. for a demo or staging.
 ## Tests
 
 `tests/test_vies_adapter.py` uses fake HTTP answers (`httpx.MockTransport`): valid, invalid, timeout → ERROR,
-country not available → ERROR, retries and the 30 s limit. `tests/test_vies_checks.py` replaces VIES with a fake
-in the API. No test needs the internet.
+country not available → ERROR, rejected requester → ERROR without retry, retries and the 30 s limit.
+`tests/test_vies_checks.py` replaces VIES with a fake in the API (address, consultation number, rejected
+requester); `tests/test_organization.py` covers the own VAT number. No test needs the internet.
