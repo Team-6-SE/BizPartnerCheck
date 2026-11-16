@@ -319,3 +319,27 @@ def test_organizations_cannot_access_each_others_partners(
             headers=headers_b,
         )
         assert response.status_code == 404
+
+
+def test_post_same_vat_from_two_different_organization_tokens(
+    anonymous_client: TestClient, db: Session, tokens
+) -> None:
+    other = Organization(name="Second token customer")
+    db.add(other)
+    db.flush()
+    vat = {"vat_number": "ATU78787878"}
+
+    def create_for(org_id: uuid.UUID):
+        return anonymous_client.post(
+            "/api/v1/partners",
+            json=vat,
+            headers={
+                "Authorization": f"Bearer {tokens.make(extra={'organization_id': str(org_id)})}"
+            },
+        )
+
+    first = create_for(TEST_ORGANIZATION_ID)
+    second = create_for(other.id)
+    assert first.status_code == second.status_code == 201
+    saved = db.query(Partner).filter(Partner.vat_number == vat["vat_number"]).all()
+    assert {row.organization_id for row in saved} == {TEST_ORGANIZATION_ID, other.id}

@@ -118,15 +118,16 @@ class TokenVerifier:
         if not isinstance(roles, list):
             roles = []  # anything else is not from our Keycloak: no roles
         organization_claim = claims.get("organization_id")
-        if not isinstance(organization_claim, str):
-            raise TokenError("invalid_token", "The sign-in token is not valid.")
-
-        try:
-            organization_id = uuid.UUID(organization_claim)
-        except ValueError as exc:
-            raise TokenError(
-                "invalid_token", "The sign-in token is not valid."
-            ) from exc
+        organization_id = None
+        if organization_claim is not None:
+            if not isinstance(organization_claim, str):
+                raise TokenError("invalid_token", "The sign-in token is not valid.")
+            try:
+                organization_id = uuid.UUID(organization_claim)
+            except ValueError as exc:
+                raise TokenError(
+                    "invalid_token", "The sign-in token is not valid."
+                ) from exc
         return CurrentUser(
             id=claims["sub"],
             email=claims.get("email"),

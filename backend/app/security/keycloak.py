@@ -84,7 +84,7 @@ class KeycloakAdminClient:
         self._clock = clock
         self._token: str | None = None
         self._token_valid_until = 0.0
-        self._emails: dict[str, str | None] = {}
+        self._profiles: dict[str, dict[str, Any]] = {}
 
     def events(
         self, date_from_ms: int, first: int, max_results: int
@@ -105,32 +105,35 @@ class KeycloakAdminClient:
             },
         )
 
-    def user_email(self, user_id: str) -> str | None:
-        """E-mail of a Keycloak user; None if the user no longer exists."""
-        if len(self._emails) > EMAIL_CACHE_SIZE:
-            self._emails.clear()  # small and fresh: e-mails can change
-        if user_id not in self._emails:
+    def clear_user_cache(self) -> None:
+        """Use one fresh Keycloak lookup per user in each sync run."""
+        self._profiles.clear()
+
+    def _user_profile(self, user_id: str) -> dict[str, Any]:
+        if len(self._profiles) >= EMAIL_CACHE_SIZE:
+            self._profiles.clear()
+        if user_id not in self._profiles:
             try:
                 user = self._get(f"/users/{user_id}", {})
             except _NotFound:
                 user = {}
-            self._emails[user_id] = user.get("email") or user.get("username")
-        return self._emails[user_id]
+            self._profiles[user_id] = user
+        return self._profiles[user_id]
+
+    def user_email(self, user_id: str) -> str | None:
+        """E-mail of a Keycloak user; None if deleted."""
+        user = self._user_profile(user_id)
+        return user.get("email") or user.get("username")
 
     def user_organization_id(self, user_id: str | None) -> uuid.UUID | None:
-        """Read the user's organization from Keycloak."""
+        """Read the user's organisation using the same cached user profile."""
         if not user_id:
             return None
-
-        try:
-            user = self._get(f"/users/{user_id}", {})
-        except _NotFound:
-            return None
-
-        values = user.get("attributes", {}).get("organization_id", [])
+        values = (
+            self._user_profile(user_id).get("attributes", {}).get("organization_id")
+        )
         if not isinstance(values, list) or len(values) != 1:
             return None
-
         try:
             return uuid.UUID(values[0])
         except (ValueError, TypeError, AttributeError):
@@ -340,7 +343,12 @@ def map_admin_event(event: dict[str, Any]) -> MappedEvent | None:
     ):
         attributes = representation.get("attributes")
         if isinstance(attributes, dict):
-            extra["attributes"] = attributes
+            values = attributes.get("organization_id")
+            if isinstance(values, list) and len(values) == 1:
+                try:
+                    extra["created_organization_id"] = str(uuid.UUID(values[0]))
+                except (ValueError, TypeError, AttributeError):
+                    pass
 
     event_type: EventType | None = None
     if resource == "USER" and sub_resource is None:
@@ -492,33 +500,55 @@ def _cut(value: str | None, length: int) -> str | None:
 
 
 def _rows(
-    client: KeycloakAdminClient, events: Iterable[MappedEvent]
+    db: Session, client: KeycloakAdminClient, events: Iterable[MappedEvent]
 ) -> list[dict[str, Any]]:
-    rows = []
-    organization_by_user: dict[str, uuid.UUID] = {}
+    events = list(events)
+    rows: list[dict[str, Any]] = []
+    created: dict[str, uuid.UUID] = {}
+    known: dict[str, uuid.UUID | None] = {}
     for event in events:
         if event.event_type == EventType.USER_CREATED and event.subject_id:
-            attributes = event.details.get("attributes")
-            if isinstance(attributes, dict):
-                values = attributes.get("organization_id")
-                if isinstance(values, list) and len(values) == 1:
-                    try:
-                        organization_by_user[event.subject_id] = uuid.UUID(values[0])
-                    except (ValueError, TypeError, AttributeError):
-                        pass
+            raw = event.details.get("created_organization_id")
+            if isinstance(raw, str):
+                try:
+                    created[event.subject_id] = uuid.UUID(raw)
+                except ValueError:
+                    pass
+
+    def organization_for(user_id: str | None) -> uuid.UUID | None:
+        if not user_id:
+            return None
+        if user_id in created:
+            return created[user_id]
+        if user_id not in known:
+            current = client.user_organization_id(user_id)
+            if current is None:
+                # Look up history *about* this user, never just events they acted on:
+                # an admin may have changed users in other organisations.
+                # Stored events survive account deletion (append-only log).
+                current = db.scalar(
+                    select(SecurityEvent.organization_id)
+                    .where(
+                        SecurityEvent.organization_id.is_not(None),
+                        SecurityEvent.subject_id == user_id,
+                    )
+                    .order_by(SecurityEvent.occurred_at.desc(), SecurityEvent.id.desc())
+                    .limit(1)
+                )
+            known[user_id] = current
+        return known[user_id]
+
     for event in events:
         if event.subject_id and not event.subject_email:
             event.subject_email = client.user_email(event.subject_id)
         if event.actor_id and not event.actor_email:
             event.actor_email = client.user_email(event.actor_id)
         event.summary = describe(event)
-        # Admin events: the organisation of the changed user.
         owner = event.subject_id or event.actor_id
         rows.append(
             {
                 "id": uuid.uuid4(),
-                "organization_id": organization_by_user.get(owner)
-                or client.user_organization_id(owner),
+                "organization_id": organization_for(owner),
                 "occurred_at": event.occurred_at,
                 "event_type": event.event_type.value,
                 "actor_id": _cut(event.actor_id, 64),
@@ -554,10 +584,15 @@ def sync_keycloak_events(db: Session, client: KeycloakAdminClient) -> SyncResult
 
     What was copied before a problem is kept (the next sync continues from there).
     """
+    # Admin creations first: their organisation becomes available before user
+    # sign-ins are copied, including when the account was already deleted.
     streams = (
-        ("event", client.events, map_user_event),
         ("admin", client.admin_events, map_admin_event),
+        ("event", client.events, map_user_event),
     )
+    clear_cache = getattr(client, "clear_user_cache", None)
+    if callable(clear_cache):
+        clear_cache()
     result = SyncResult()
     try:
         for prefix, fetch, mapper in streams:
@@ -565,7 +600,7 @@ def sync_keycloak_events(db: Session, client: KeycloakAdminClient) -> SyncResult
             for page in range(MAX_PAGES):
                 batch = fetch(since, page * PAGE_SIZE, PAGE_SIZE)
                 mapped = [m for m in (mapper(raw) for raw in batch) if m is not None]
-                result.imported += _insert(db, _rows(client, mapped))
+                result.imported += _insert(db, _rows(db, client, mapped))
                 if len(batch) < PAGE_SIZE:
                     break
     except KeycloakUnavailable as exc:

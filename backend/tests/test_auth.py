@@ -393,7 +393,11 @@ def test_token_without_organization_is_rejected(
     token = tokens.make(omit=("organization_id",))
     response = call(anonymous_client, "GET", "/api/v1/me", token)
 
-    assert_401(response, "invalid_token")
+    assert response.status_code == 200
+    assert response.json()["id"] == "user-1"
+    denied = call(anonymous_client, "GET", "/api/v1/partners", token)
+    assert denied.status_code == 403
+    assert denied.json()["detail"]["code"] == "no_organization"
 
 
 def test_token_with_invalid_organization_is_rejected(
