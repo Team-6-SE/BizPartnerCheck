@@ -346,6 +346,11 @@ class FakeKeycloak:
             "admin-1": "admin@example.com",
         }
         self.calls: list[tuple[str, int, int]] = []
+        self.organizations = {
+            "user-1": TEST_ORGANIZATION_ID,
+            "u-2": TEST_ORGANIZATION_ID,
+            "admin-1": TEST_ORGANIZATION_ID,
+        }
         self.down = False
 
     def _serve(
@@ -378,6 +383,11 @@ class FakeKeycloak:
 
     def user_email(self, user_id: str) -> str | None:
         return self.emails.get(user_id)
+
+    def user_organization_id(self, user_id: str | None) -> uuid.UUID | None:
+        if not user_id:
+            return None
+        return self.organizations.get(user_id)
 
 
 @pytest.fixture
