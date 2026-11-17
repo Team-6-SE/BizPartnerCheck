@@ -11,13 +11,14 @@ import {
   partnerLabel,
   restorePartner,
   runBmfCheck,
+  runHfuCheck,
   runViesCheck,
   updatePartner,
   type Partner,
 } from '@/api/partners'
 import { CheckResultView } from '@/components/check-result'
 import { PageHeader } from '@/components/page-header'
-import { BMF_LABELS, VIES_LABELS } from '@/lib/check-results'
+import { BMF_LABELS, HFU_LABELS, VIES_LABELS } from '@/lib/check-results'
 import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -243,8 +244,8 @@ export function PartnersPage() {
     setCheckingIds(new Set(checkingRef.current))
     setCheckErrors(({ [partner.id]: _old, ...rest }) => rest)
     const label = partnerLabel(partner)
-    // VIES needs a VAT number; the BMF list can also match the company register number.
-    const sources = partner.vat_number ? 'VIES and the BMF list' : 'the BMF list'
+    // VIES and the HFU list need a VAT number; the BMF list can also match the company register number.
+    const sources = partner.vat_number ? 'VIES, the BMF list and the HFU list' : 'the BMF list'
     setAnnouncement(`Checking ${label} in ${sources}…`)
 
     const errors: string[] = []
@@ -269,6 +270,17 @@ export function PartnersPage() {
         said.push(`BMF list: ${BMF_LABELS[result.status]}. ${result.message}`)
       } catch (error) {
         errors.push(`BMF list: ${errorMessage(error)}`)
+      }
+      // HFU list (contractor liability): the ÖGK identifies the partner by its VAT number.
+      if (partner.vat_number) {
+        try {
+          const result = await runHfuCheck(partner.id)
+          updateInLists(partner.id, (item) => ({ ...item, latest_hfu_check: result }))
+          fresh.push(result.id)
+          said.push(`HFU list: ${HFU_LABELS[result.status]}. ${result.message}`)
+        } catch (error) {
+          errors.push(`HFU list: ${errorMessage(error)}`)
+        }
       }
       setFreshCheckIds(new Set(fresh))
       if (errors.length) setCheckErrors((current) => ({ ...current, [partner.id]: errors }))
@@ -308,6 +320,7 @@ export function PartnersPage() {
         ...updated,
         latest_vies_check: item.latest_vies_check,
         latest_bmf_check: item.latest_bmf_check,
+        latest_hfu_check: item.latest_hfu_check,
       }))
       setEditingPartnerId(null)
       setEditedCompanyName('')
@@ -335,7 +348,7 @@ export function PartnersPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Partners"
-        description="Add a partner by its VAT number or company register number and check it with the EU VIES service and the BMF list of fake companies."
+        description="Add a partner by its VAT number or company register number and check it with the EU VIES service, the BMF list of fake companies and the ÖGK HFU list."
       />
 
       <Card>
@@ -426,8 +439,9 @@ export function PartnersPage() {
             <h2>Partners</h2>
           </CardTitle>
           <CardDescription>
-            All partners of your organization. “Check” asks VIES whether the VAT number is valid and
-            compares the partner with the BMF list of fake companies.
+            All partners of your organization. “Check” asks VIES whether the VAT number is valid,
+            compares the partner with the BMF list of fake companies and asks the ÖGK whether it is
+            on the HFU list (contractor liability).
           </CardDescription>
           {loadState.status === 'ready' && (
             <CardAction>
@@ -543,6 +557,7 @@ export function PartnersPage() {
                     <TableHead>Partner</TableHead>
                     <TableHead>VIES result</TableHead>
                     <TableHead>BMF list</TableHead>
+                    <TableHead>HFU list</TableHead>
                     <TableHead className="text-right max-sm:hidden">
                       <span className="sr-only">Actions</span>
                     </TableHead>
@@ -552,6 +567,7 @@ export function PartnersPage() {
                   {visiblePartners.map((partner) => {
                     const check = partner.latest_vies_check
                     const bmfCheck = partner.latest_bmf_check
+                    const hfuCheck = partner.latest_hfu_check
                     const errors = checkErrors[partner.id]
                     const checking = checkingIds.has(partner.id)
                     const viesCompanyName = check?.status === 'OK' ? check.company_name : null
@@ -687,6 +703,19 @@ export function PartnersPage() {
                             <span className="text-muted-foreground">Not checked yet</span>
                           )}
                         </TableCell>
+                        <TableCell className="min-w-52 align-top whitespace-normal">
+                          {hfuCheck ? (
+                            <CheckResultView
+                              check={hfuCheck}
+                              labels={HFU_LABELS}
+                              fresh={freshCheckIds.has(hfuCheck.id)}
+                            />
+                          ) : partner.vat_number ? (
+                            <span className="text-muted-foreground">Not checked yet</span>
+                          ) : (
+                            <span className="text-muted-foreground">No VAT number, HFU does not apply</span>
+                          )}
+                        </TableCell>
                         <TableCell className="text-right align-top max-sm:hidden">
                           <CheckButton partner={partner} checking={checking} onCheck={handleCheck} />
                         </TableCell>
@@ -746,8 +775,8 @@ function CheckButton({
 }) {
   // Archived partners are not checked (the backend answers 404 for them).
   if (partner.is_archived) return null
-  // Every partner can be checked against the BMF list; VIES only with a VAT number.
-  const sources = partner.vat_number ? 'in VIES and the BMF list' : 'in the BMF list'
+  // Every partner can be checked against the BMF list; VIES and the HFU list only with a VAT number.
+  const sources = partner.vat_number ? 'in VIES, the BMF list and the HFU list' : 'in the BMF list'
   return (
     <Button
       variant="outline"
@@ -759,7 +788,7 @@ function CheckButton({
       {checking ? <Spinner data-icon="inline-start" /> : <SearchCheckIcon data-icon="inline-start" />}
       {checking
         ? 'Checking…'
-        : partner.latest_vies_check || partner.latest_bmf_check
+        : partner.latest_vies_check || partner.latest_bmf_check || partner.latest_hfu_check
           ? 'Check Again'
           : 'Check'}
       <span className="sr-only">

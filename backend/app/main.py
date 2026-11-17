@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import OperationalError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.adapters import bmf, vies
+from app.adapters import bmf, hfu, vies
 from app.adapters.fake import check_adapter_settings
 from app.auth import AuthenticatedUser, get_current_user
 from app.bmf.background import bmf_import_schedule
@@ -20,7 +20,7 @@ from app.security.background import security_event_sync
 from app.security.router import router as security_router
 
 # Every external source; their {SOURCE}_ADAPTER settings are checked at startup.
-SOURCES = (vies.SOURCE, bmf.SOURCE)
+SOURCES = (vies.SOURCE, bmf.SOURCE, hfu.SOURCE)
 
 
 @contextlib.asynccontextmanager

@@ -22,19 +22,31 @@ export const BMF_LABELS: Labels = {
   ERROR: 'Error',
 }
 
-/** The backend names sources in capitals ("VIES", "BMF"); compare without case. */
-function isSource(source: string, name: 'VIES' | 'BMF'): boolean {
+// ÖGK HFU list: OK means the partner is listed (no withholding needed), FINDING that it is not.
+export const HFU_LABELS: Labels = {
+  OK: 'Listed',
+  FINDING: 'Not listed',
+  REVIEW: 'Please review',
+  NOT_APPLICABLE: 'Not applicable',
+  ERROR: 'Error',
+}
+
+/** The backend names sources in capitals ("VIES", "BMF", "HFU"); compare without case. */
+function isSource(source: string, name: 'VIES' | 'BMF' | 'HFU'): boolean {
   return source.toUpperCase() === name
 }
 
 /** The words for a result depend on the source: "Invalid" (VIES) is not "Listed" (BMF). */
 export function labelsFor(source: string): Labels {
-  return isSource(source, 'BMF') ? BMF_LABELS : VIES_LABELS
+  if (isSource(source, 'BMF')) return BMF_LABELS
+  if (isSource(source, 'HFU')) return HFU_LABELS
+  return VIES_LABELS
 }
 
 /** How a source is named for people. */
 export function sourceName(source: string): string {
   if (isSource(source, 'BMF')) return 'BMF list'
+  if (isSource(source, 'HFU')) return 'HFU list'
   return source.toUpperCase()
 }
 

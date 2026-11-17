@@ -34,9 +34,10 @@ EU VAT number check. Open public service of the European Commission; no API key 
 
 Social insurance list (HFU). Public SOAP web service, free of charge.
 
-- Service: "AGH – Webservice HFU-Abfrage extern", version 3.0
-- Production: `https://www.sozialversicherung.at/agh-wsprod/DienstgeberAbfrageWS_3_0` (add `?wsdl` for the WSDL)
-- Test: `https://www.sozialversicherung.at/agh-wstt/DienstgeberAbfrageWS_3_0`, with defined test data in the interface description
+- Service: "AGH – Webservice HFU-Abfrage extern", version 3.0 ([spec PDF](https://www.sozialversicherung.at/agh-frontend-extern/resources/doc/AGH_Anleitung_HFU_Abfrage_Webservice.pdf))
+- Production: `https://www.sozialversicherung.at/agh-ws-prod/DienstgeberAbfrageWS_3_0` (add `?wsdl` for the WSDL)
+- Test: `https://www.sozialversicherung.at/agh-ws-tt/DienstgeberAbfrageWS_3_0`, with defined test data in the interface description
+- Implemented in S4.4, see [hfu.md](hfu.md): our organisation's own VAT number is the requester ID
 - Web client for manual checks: `agh.sozialversicherung.at`
 - Registration: none mentioned in the interface description. Versions 1.1 and 2.0 were shut down after Q2 2023.
 - Request: exactly one identifier of the client (DGNR, VSNR or UID) plus a reference date; up to 50 contractors per request, identified by DGNR, VSNR or UID

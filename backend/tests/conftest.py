@@ -12,6 +12,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.adapters.base import CheckSubject
+from app.adapters.hfu import HfuAdapter, get_hfu_adapter
 from app.adapters.vies import ViesAdapter, get_vies_adapter
 from app.auth import TokenVerifier, get_token_verifier
 from app.db.models import (
@@ -59,6 +60,46 @@ class FakeVies(ViesAdapter):
     def query(self, subject: CheckSubject, timeout: float) -> dict[str, Any]:
         self.checked.append(subject.vat_number)
         self.requesters.append(subject.requester_vat)
+        return self.answer
+
+
+# A parsed HFU answer (app/adapters/hfu.py): the partner is on the list as employer.
+HFU_LISTED_ANSWER = {
+    "stichtag": "2026-11-16",
+    "requester": {"uidAuftraggeber": "ATU99999999"},
+    "checked": {"uidAuftragnehmer": "ATU12345678"},
+    "auftragnehmerRS": [
+        {
+            "dgnrAuftragnehmer": "999999999",
+            "vsnrAuftragnehmer": None,
+            "auftragnehmerName": "Muster Bau GmbH",
+            "auftragnehmerHauptanschrift": "3100 St. Pölten, Rathausplatz 6",
+            "firmenbuchnummer": "123456d",
+            "uid": "ATU12345678",
+            "hfuListeDgJN": "J",
+            "hfuListeEpuJN": "N",
+            "hinweis": None,
+            "einzelunternehmen": [],
+        }
+    ],
+}
+
+
+class FakeHfu(HfuAdapter):
+    """Stands in for the ÖGK HFU service in API tests: answer chosen by the test."""
+
+    def __init__(self) -> None:
+        super().__init__(sleep=lambda _seconds: None)
+        self.answer: dict[str, Any] = HFU_LISTED_ANSWER
+        self.checked: list[str | None] = []
+        self.requesters: list[str | None] = []
+
+    def query(self, subject: CheckSubject, timeout: float) -> dict[str, Any]:
+        self.checked.append(subject.vat_number)
+        self.requesters.append(subject.requester_vat)
+        if not subject.requester_vat:
+            # The real adapter answers without a request in this case.
+            return super().query(subject, timeout)
         return self.answer
 
 
@@ -193,13 +234,19 @@ def fake_vies() -> FakeVies:
 
 
 @pytest.fixture
+def fake_hfu() -> FakeHfu:
+    return FakeHfu()
+
+
+@pytest.fixture
 def anonymous_client(
-    db: Session, fake_vies: FakeVies, tokens: TokenFactory
+    db: Session, fake_vies: FakeVies, fake_hfu: FakeHfu, tokens: TokenFactory
 ) -> Iterator[TestClient]:
     """A client without sign-in token."""
     app.dependency_overrides[get_db] = lambda: db
-    # Tests never call the real VIES or the real Keycloak.
+    # Tests never call the real VIES, the real ÖGK service or the real Keycloak.
     app.dependency_overrides[get_vies_adapter] = lambda: fake_vies
+    app.dependency_overrides[get_hfu_adapter] = lambda: fake_hfu
     app.dependency_overrides[get_token_verifier] = tokens.verifier
     app.dependency_overrides[get_keycloak_client] = lambda: None
     try:

@@ -20,8 +20,9 @@ only implements four methods. Everything else (time limits, retries, "no answer"
 
 Optional: `data_as_of(raw)` for sources whose data is imported (e.g. BMF: time of the last import).
 
-`subject` is a `CheckSubject` with what we know about the partner: `vat_number`, and later `name` and
-`register_number`. Each source uses what it needs.
+`subject` is a `CheckSubject` with what we know about the partner: `vat_number`, `name` (from VIES),
+`register_number`, and `requester_vat` (our organisation's own VAT number, for sources that must identify the
+requester: VIES consultation number, ÖGK HFU). Each source uses what it needs.
 
 ### Common result
 
@@ -29,7 +30,7 @@ Optional: `data_as_of(raw)` for sources whose data is imported (e.g. BMF: time o
 
 | Field | Meaning |
 |---|---|
-| `source` | e.g. `VIES`, `BMF` ([bmf.md](bmf.md)) |
+| `source` | e.g. `VIES` ([vies.md](vies.md)), `BMF` ([bmf.md](bmf.md)), `HFU` ([hfu.md](hfu.md)) |
 | `status` | `OK`, `FINDING`, `REVIEW`, `NOT_APPLICABLE` or `ERROR` (below) |
 | `explanation` | the sentence from `describe` |
 | `retrieved_at` | when we asked |
