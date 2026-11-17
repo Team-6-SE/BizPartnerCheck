@@ -141,7 +141,8 @@ def test_list_shows_latest_hfu_result(
     fake_hfu.answer = listed
     latest = run_check(client, checked["id"]).json()
 
-    partners = {p["vat_number"]: p for p in client.get("/api/v1/partners").json()}
+    page = client.get("/api/v1/partners").json()
+    partners = {p["vat_number"]: p for p in page["items"]}
 
     assert partners["ATU11111111"]["latest_hfu_check"] == latest
     assert partners["ATU11111111"]["latest_vies_check"] is None

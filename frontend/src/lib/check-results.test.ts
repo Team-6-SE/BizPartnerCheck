@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { CheckResult } from '@/api/partners'
 
-import { BMF_LABELS, VIES_LABELS, isStale, labelsFor, sourceName, viesWithoutDetails } from './check-results'
+import { BMF_LABELS, HFU_LABELS, VIES_LABELS, isStale, labelsFor, sourceName, viesWithoutDetails } from './check-results'
 
 function check(overrides: Partial<CheckResult> = {}): CheckResult {
   return {
@@ -27,13 +27,20 @@ describe('labelsFor', () => {
     expect(labelsFor('BMF').FINDING).toBe('Listed')
     expect(labelsFor('VIES').FINDING).toBe('Invalid')
   })
+
+  it('uses the HFU words for the HFU list: listed is good there', () => {
+    expect(labelsFor('HFU')).toBe(HFU_LABELS)
+    expect(labelsFor('HFU').OK).toBe('Listed')
+    expect(labelsFor('HFU').FINDING).toBe('Not listed')
+  })
 })
 
 describe('sourceName', () => {
   it('names the sources for people', () => {
     expect(sourceName('VIES')).toBe('VIES')
     expect(sourceName('BMF')).toBe('BMF list')
-    expect(sourceName('hfu')).toBe('HFU')
+    expect(sourceName('hfu')).toBe('HFU list')
+    expect(sourceName('gisa')).toBe('GISA')
   })
 })
 
