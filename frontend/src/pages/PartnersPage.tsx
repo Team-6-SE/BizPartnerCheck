@@ -1,13 +1,6 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { Link } from 'react-router'
-import {
-  Building2Icon,
-  CircleCheckIcon,
-  CircleXIcon,
-  PlusIcon,
-  SearchCheckIcon,
-  TriangleAlertIcon,
-} from 'lucide-react'
+import { Building2Icon, PlusIcon, SearchCheckIcon } from 'lucide-react'
 
 import {
   ApiError,
@@ -20,11 +13,11 @@ import {
   runBmfCheck,
   runViesCheck,
   updatePartner,
-  type CheckResult,
-  type CheckStatus,
   type Partner,
 } from '@/api/partners'
+import { CheckResultView } from '@/components/check-result'
 import { PageHeader } from '@/components/page-header'
+import { BMF_LABELS, VIES_LABELS } from '@/lib/check-results'
 import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -51,6 +44,9 @@ const dateFormat = new Intl.DateTimeFormat(undefined, {
   timeStyle: 'short',
 })
 
+// Wait this long after the last key press before searching (one request, not one per key).
+const SEARCH_DELAY_MS = 300
+
 function errorMessage(error: unknown): string {
   return error instanceof ApiError ? error.message : 'Something went wrong. Please try again.'
 }
@@ -62,6 +58,8 @@ export function PartnersPage() {
   const [reloadKey, setReloadKey] = useState(0)
 
   // Search, sorting and pagination apply to active partners.
+  // searchInput is what is typed; search is what is asked for (after a short pause).
+  const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize] = useState(20)
@@ -71,6 +69,7 @@ export function PartnersPage() {
   const [totalPages, setTotalPages] = useState(0)
 
   const [showArchived, setShowArchived] = useState(false)
+  const [archivedError, setArchivedError] = useState('')
   const visiblePartners = showArchived ? archivedPartners : partners
 
   // Edit form state.
@@ -108,6 +107,16 @@ export function PartnersPage() {
   const registerErrorId = useId()
   const companyNameId = useId()
 
+  // Search after a short pause in typing.
+  useEffect(() => {
+    if (searchInput === search) return
+    const timer = window.setTimeout(() => {
+      setSearch(searchInput)
+      setPage(1)
+    }, SEARCH_DELAY_MS)
+    return () => window.clearTimeout(timer)
+  }, [searchInput, search])
+
   // Load the current page of active partners.
   useEffect(() => {
     let cancelled = false
@@ -116,6 +125,11 @@ export function PartnersPage() {
     listPartners({ search, page, pageSize, sortBy, sortOrder })
       .then((result) => {
         if (cancelled) return
+        // The page is gone (e.g. its last partner was archived): show the last page instead.
+        if (result.total_pages > 0 && page > result.total_pages) {
+          setPage(result.total_pages)
+          return
+        }
         setPartners(result.items)
         setTotalPartners(result.total)
         setTotalPages(result.total_pages)
@@ -138,10 +152,12 @@ export function PartnersPage() {
     let cancelled = false
     listArchivedPartners()
       .then((result) => {
-        if (!cancelled) setArchivedPartners(result)
+        if (cancelled) return
+        setArchivedPartners(result)
+        setArchivedError('')
       })
       .catch((error: unknown) => {
-        if (!cancelled) setAnnouncement(`Could not load archived partners. ${errorMessage(error)}`)
+        if (!cancelled) setArchivedError(errorMessage(error))
       })
 
     return () => {
@@ -202,6 +218,7 @@ export function PartnersPage() {
       setCompanyName('')
       setPage(1)
       setSearch('')
+      setSearchInput('')
       setShowArchived(false)
       reloadLists()
       setAnnouncement(`Partner ${partnerLabel(partner)} added.`)
@@ -240,7 +257,7 @@ export function PartnersPage() {
           const result = await runViesCheck(partner.id)
           updateInLists(partner.id, (item) => ({ ...item, latest_vies_check: result }))
           fresh.push(result.id)
-          said.push(`VIES: ${STATUS_LABELS[result.status]}.`)
+          said.push(`VIES: ${VIES_LABELS[result.status]}.`)
         } catch (error) {
           errors.push(`VIES: ${errorMessage(error)}`)
         }
@@ -423,12 +440,10 @@ export function PartnersPage() {
         <CardContent className="flex flex-col gap-4">
           <div className="grid gap-3 sm:grid-cols-2">
             <Input
+              type="search"
               placeholder="Search company name, VAT number or FN…"
-              value={search}
-              onChange={(event) => {
-                setSearch(event.target.value)
-                setPage(1)
-              }}
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
               aria-label="Search partners"
               disabled={showArchived}
             />
@@ -488,7 +503,19 @@ export function PartnersPage() {
             </Alert>
           )}
 
-          {loadState.status === 'ready' && visiblePartners.length === 0 && (
+          {showArchived && archivedError && (
+            <Alert variant="destructive">
+              <AlertTitle>Could Not Load Archived Partners</AlertTitle>
+              <AlertDescription>{archivedError}</AlertDescription>
+              <AlertAction>
+                <Button variant="outline" size="sm" onClick={retryLoading}>
+                  Try Again
+                </Button>
+              </AlertAction>
+            </Alert>
+          )}
+
+          {loadState.status === 'ready' && visiblePartners.length === 0 && !(showArchived && archivedError) && (
             <Empty className="border">
               <EmptyHeader>
                 <EmptyMedia variant="icon">
@@ -635,7 +662,7 @@ export function PartnersPage() {
                           {check ? (
                             <CheckResultView
                               check={check}
-                              labels={STATUS_LABELS}
+                              labels={VIES_LABELS}
                               fresh={freshCheckIds.has(check.id)}
                             />
                           ) : partner.vat_number ? (
@@ -740,111 +767,6 @@ function CheckButton({
         {partnerLabel(partner)} {sources}
       </span>
     </Button>
-  )
-}
-
-type Labels = Record<CheckStatus, string>
-
-// VIES wording: OK means the VAT number is valid, FINDING that it is not.
-const STATUS_LABELS: Labels = {
-  OK: 'Valid',
-  FINDING: 'Invalid',
-  REVIEW: 'Please review',
-  NOT_APPLICABLE: 'Not applicable',
-  ERROR: 'Error',
-}
-
-// BMF list of fake companies: FINDING means the partner is listed.
-const BMF_LABELS: Labels = {
-  OK: 'Not listed',
-  FINDING: 'Listed',
-  REVIEW: 'Possible match',
-  NOT_APPLICABLE: 'Not applicable',
-  ERROR: 'Error',
-}
-
-const dayFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' })
-const MAX_LIST_AGE_MS = 24 * 60 * 60 * 1000
-
-/** Imported lists (BMF): older than 24 hours when the check ran. */
-function isStale(check: CheckResult): boolean {
-  if (!check.data_as_of) return false
-  return new Date(check.checked_at).getTime() - new Date(check.data_as_of).getTime() > MAX_LIST_AGE_MS
-}
-
-function CheckResultView({
-  check,
-  labels,
-  fresh,
-}: {
-  check: CheckResult
-  labels: Labels
-  fresh: boolean
-}) {
-  const stale = isStale(check)
-  return (
-    <div
-      data-fresh={fresh ? true : undefined}
-      className="flex flex-col items-start gap-1 data-fresh:animate-in data-fresh:fade-in-0 data-fresh:duration-200 data-fresh:ease-out-strong motion-reduce:animate-none"
-    >
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <StatusBadge status={check.status} labels={labels} />
-        <time dateTime={check.checked_at} className="text-xs text-muted-foreground tabular-nums">
-          {dateFormat.format(new Date(check.checked_at))}
-        </time>
-      </div>
-      {check.consultation_number && (
-        <p className="text-xs text-muted-foreground">
-          Consultation number <span className="font-mono">{check.consultation_number}</span>
-        </p>
-      )}
-      {(check.status !== 'OK' || stale) && (
-        <p className="text-xs text-muted-foreground">{check.message}</p>
-      )}
-      {check.data_as_of && (
-        <p
-          className={
-            stale
-              ? 'flex items-center gap-1 text-xs text-amber-700 dark:text-amber-400'
-              : 'text-xs text-muted-foreground'
-          }
-        >
-          {stale && <TriangleAlertIcon aria-hidden className="size-3" />}
-          List as of{' '}
-          <time dateTime={check.data_as_of}>{dayFormat.format(new Date(check.data_as_of))}</time>
-          {stale && ' (older than 24 hours)'}
-        </p>
-      )}
-    </div>
-  )
-}
-
-function StatusBadge({ status, labels }: { status: CheckStatus; labels: Labels }) {
-  if (status === 'OK') {
-    return (
-      <Badge variant="outline">
-        <CircleCheckIcon data-icon="inline-start" className="text-emerald-600 dark:text-emerald-400" />
-        {labels.OK}
-      </Badge>
-    )
-  }
-  if (status === 'FINDING') {
-    return (
-      <Badge variant="destructive">
-        <CircleXIcon data-icon="inline-start" />
-        {labels.FINDING}
-      </Badge>
-    )
-  }
-  if (status === 'NOT_APPLICABLE') {
-    // Not a warning: the source simply does not cover this partner.
-    return <Badge variant="outline">{labels.NOT_APPLICABLE}</Badge>
-  }
-  return (
-    <Badge variant="outline">
-      <TriangleAlertIcon data-icon="inline-start" className="text-amber-600 dark:text-amber-400" />
-      {labels[status]}
-    </Badge>
   )
 }
 

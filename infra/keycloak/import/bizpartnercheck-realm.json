@@ -68,13 +68,15 @@
   ],
   "defaultLocale": "en",
   "smtpServer": {
-    "host": "mailpit",
-    "port": "1025",
-    "from": "no-reply@bizpartnercheck.local",
+    "host": "${SMTP_HOST:mailpit}",
+    "port": "${SMTP_PORT:1025}",
+    "from": "${SMTP_FROM:no-reply@bizpartnercheck.local}",
     "fromDisplayName": "BizPartnerCheck",
-    "auth": "false",
+    "auth": "${SMTP_AUTH:false}",
+    "user": "${SMTP_USER:}",
+    "password": "${SMTP_PASSWORD:}",
     "ssl": "false",
-    "starttls": "false"
+    "starttls": "${SMTP_STARTTLS:false}"
   },
   "clients": [
     {
@@ -89,17 +91,17 @@
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": false,
       "frontchannelLogout": true,
-      "rootUrl": "http://localhost:5173",
+      "rootUrl": "${APP_BASE_URL:http://localhost:5173}",
       "baseUrl": "/",
       "redirectUris": [
-        "http://localhost:5173/*"
+        "${APP_BASE_URL:http://localhost:5173}/*"
       ],
       "webOrigins": [
-        "http://localhost:5173"
+        "${APP_BASE_URL:http://localhost:5173}"
       ],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "http://localhost:5173/*"
+        "post.logout.redirect.uris": "${APP_BASE_URL:http://localhost:5173}/*"
       },
       "protocolMappers": [
         {
@@ -139,7 +141,7 @@
       "publicClient": false,
       "bearerOnly": false,
       "clientAuthenticatorType": "client-secret",
-      "secret": "local-dev-only-change-in-production",
+      "secret": "${KEYCLOAK_API_CLIENT_SECRET:local-dev-only-change-in-production}",
       "serviceAccountsEnabled": true,
       "standardFlowEnabled": false,
       "implicitFlowEnabled": false,
@@ -159,7 +161,7 @@
       "protocol": "openid-connect",
       "publicClient": false,
       "clientAuthenticatorType": "client-secret",
-      "secret": "local-registration-only-change-in-production",
+      "secret": "${KEYCLOAK_REGISTRATION_CLIENT_SECRET:local-registration-only-change-in-production}",
       "serviceAccountsEnabled": true,
       "standardFlowEnabled": false,
       "implicitFlowEnabled": false,

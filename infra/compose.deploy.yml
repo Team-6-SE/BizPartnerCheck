@@ -26,6 +26,13 @@ services:
       OIDC_ISSUER: ${OIDC_ISSUER:?Set OIDC_ISSUER}
       OIDC_JWKS_URL: ${OIDC_JWKS_URL:?Set OIDC_JWKS_URL}
       OIDC_AUDIENCE: bizpartnercheck-api
+      # Security log and registration: the realm reads the same secrets (see keycloak below).
+      KEYCLOAK_API_CLIENT_SECRET: ${KEYCLOAK_API_CLIENT_SECRET:?Set KEYCLOAK_API_CLIENT_SECRET}
+      KEYCLOAK_REGISTRATION_CLIENT_SECRET: ${KEYCLOAK_REGISTRATION_CLIENT_SECRET:?Set KEYCLOAK_REGISTRATION_CLIENT_SECRET}
+      APP_BASE_URL: https://${DOMAIN:?Set DOMAIN}
+      # Only Caddy reaches the backend: trust its X-Forwarded-For, so the registration
+      # rate limit sees the visitor's address and not Caddy's.
+      FORWARDED_ALLOW_IPS: "*"
     depends_on:
       db:
         condition: service_healthy
@@ -89,8 +96,21 @@ services:
       KC_HTTP_ENABLED: "true"
       KC_PROXY_HEADERS: xforwarded
       KC_HOSTNAME: https://${AUTH_DOMAIN:?Set AUTH_DOMAIN}
+      # Filled into the realm file on the first start (placeholders ${...} in the JSON).
+      APP_BASE_URL: https://${DOMAIN:?Set DOMAIN}
+      KEYCLOAK_API_CLIENT_SECRET: ${KEYCLOAK_API_CLIENT_SECRET:?Set KEYCLOAK_API_CLIENT_SECRET}
+      KEYCLOAK_REGISTRATION_CLIENT_SECRET: ${KEYCLOAK_REGISTRATION_CLIENT_SECRET:?Set KEYCLOAK_REGISTRATION_CLIENT_SECRET}
+      # E-mails (registration, password reset): a real mail server on staging.
+      SMTP_HOST: ${SMTP_HOST:?Set SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_FROM: ${SMTP_FROM:?Set SMTP_FROM}
+      SMTP_AUTH: ${SMTP_AUTH:-true}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
     volumes:
       - ./keycloak/import:/opt/keycloak/data/import:ro
+      - ./keycloak/themes/bizpartnercheck:/opt/keycloak/themes/bizpartnercheck:ro
     depends_on:
       keycloak_db:
         condition: service_healthy
@@ -102,4 +122,4 @@ volumes:
   db_data:
   caddy_data:
   caddy_config:
-  keycloak_db_data:
+  keycloak_db_data:

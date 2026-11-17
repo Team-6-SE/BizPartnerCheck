@@ -125,6 +125,9 @@ lost: admin console → Users → `admin@bizpartnercheck.local` → Credentials 
 - Second factor, roles and the security log: [docs/security-log.md](docs/security-log.md)
 - How external sources are connected (result format, time limits, fake sources): [docs/source-adapters.md](docs/source-adapters.md)
 - BMF fake-company list: import, matching and the 24-hour warning: [docs/bmf.md](docs/bmf.md)
+- Self-registration of new organisations (`/register`, e-mail link in Mailpit): [docs/registration.md](docs/registration.md)
+- Partner directory: search, sorting, archive, partner page: [docs/partner-directory.md](docs/partner-directory.md)
+- Test server (staging): settings, first start, backups and restore: [docs/deployment.md](docs/deployment.md)
 
 ### End-to-end tests (browser)
 **Requirements:** database, Keycloak, backend and frontend are running (see above).
