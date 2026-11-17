@@ -63,27 +63,26 @@ class FakeVies(ViesAdapter):
         return self.answer
 
 
-def hfu_answer(employer: str = "J", sole_trader: str = "N") -> dict[str, Any]:
-    """A parsed HFU answer (app/adapters/hfu.py): the partner's entry with its flags."""
-    return {
-        "stichtag": "2026-11-16",
-        "requester": {"uidAuftraggeber": "ATU99999999"},
-        "checked": {"uidAuftragnehmer": "ATU12345678"},
-        "auftragnehmerRS": [
-            {
-                "dgnrAuftragnehmer": "999999999",
-                "vsnrAuftragnehmer": None,
-                "auftragnehmerName": "Muster Bau GmbH",
-                "auftragnehmerHauptanschrift": "3100 St. Pölten, Rathausplatz 6",
-                "firmenbuchnummer": "123456d",
-                "uid": "ATU12345678",
-                "hfuListeDgJN": employer,
-                "hfuListeEpuJN": sole_trader,
-                "hinweis": None,
-                "einzelunternehmen": [],
-            }
-        ],
-    }
+# A parsed HFU answer (app/adapters/hfu.py): the partner is on the list as employer.
+HFU_LISTED_ANSWER = {
+    "stichtag": "2026-11-16",
+    "requester": {"uidAuftraggeber": "ATU99999999"},
+    "checked": {"uidAuftragnehmer": "ATU12345678"},
+    "auftragnehmerRS": [
+        {
+            "dgnrAuftragnehmer": "999999999",
+            "vsnrAuftragnehmer": None,
+            "auftragnehmerName": "Muster Bau GmbH",
+            "auftragnehmerHauptanschrift": "3100 St. Pölten, Rathausplatz 6",
+            "firmenbuchnummer": "123456d",
+            "uid": "ATU12345678",
+            "hfuListeDgJN": "J",
+            "hfuListeEpuJN": "N",
+            "hinweis": None,
+            "einzelunternehmen": [],
+        }
+    ],
+}
 
 
 class FakeHfu(HfuAdapter):
@@ -91,7 +90,7 @@ class FakeHfu(HfuAdapter):
 
     def __init__(self) -> None:
         super().__init__(sleep=lambda _seconds: None)
-        self.answer: dict[str, Any] = hfu_answer()
+        self.answer: dict[str, Any] = HFU_LISTED_ANSWER
         self.checked: list[str | None] = []
         self.requesters: list[str | None] = []
 
@@ -99,8 +98,8 @@ class FakeHfu(HfuAdapter):
         self.checked.append(subject.vat_number)
         self.requesters.append(subject.requester_vat)
         if not subject.requester_vat:
-            # Like the real adapter: no request without the organisation's VAT number.
-            return self.answer_without_requester(subject)
+            # The real adapter answers without a request in this case.
+            return super().query(subject, timeout)
         return self.answer
 
 
