@@ -279,11 +279,13 @@ export function PartnersPage() {
       }))
     }
 
+    let started = false
     try {
       // The backend answers at once and asks all sources in parallel (S5.1).
-      const started = await startCheckRun(partner.id)
-      show(started)
-      const run = await waitForCheckRun(started, { onProgress: show })
+      const firstRun = await startCheckRun(partner.id)
+      started = true
+      show(firstRun)
+      const run = await waitForCheckRun(firstRun, { onProgress: show })
       const said = run.results.map(
         (result) => `${sourceName(result.source)}: ${labelsFor(result.source)[result.status]}.`,
       )
@@ -298,7 +300,8 @@ export function PartnersPage() {
       }
       setAnnouncement(`${label}: ${said.join(' ')}`)
     } catch (error) {
-      const message = `The check could not start: ${errorMessage(error)}`
+      // Once the run has started it keeps going even if one status request fails.
+      const message = started ? 'Lost contact with the check. It keeps running; reload the page in a moment to see the results.' : `The check could not start: ${errorMessage(error)}`
       setCheckErrors((current) => ({ ...current, [partner.id]: [message] }))
       setAnnouncement(`${label}: ${message}`)
     } finally {

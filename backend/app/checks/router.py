@@ -28,7 +28,13 @@ from app.adapters.vies import get_vies_adapter
 from app.auth import AuthenticatedUser
 from app.checks.executor import SessionFactory, get_session_factory
 from app.checks.queue import RunDispatcher, get_run_dispatcher
-from app.checks.runs import RUNNING, close_if_stale, finish_run, start_run
+from app.checks.runs import (
+    RUNNING,
+    close_if_stale,
+    finish_run,
+    is_stale,
+    start_run,
+)
 from app.db.models import CheckResult, CheckRun, Partner
 from app.db.session import get_db
 from app.errors import api_error
@@ -109,6 +115,22 @@ def _changes(
     ]
 
 
+def _running_run(db: Session, partner_id: uuid.UUID) -> CheckRun | None:
+    """The partner's run that is still going on (an interrupted one is closed first)."""
+    run = db.scalar(
+        select(CheckRun)
+        .where(CheckRun.partner_id == partner_id, CheckRun.status == RUNNING)
+        .order_by(CheckRun.started_at.desc())
+        .limit(1)
+    )
+    if run is None or not is_stale(run):
+        return run
+    close_if_stale(db, run)
+    # close_if_stale ended the transaction: lock the partner again for the new run.
+    db.scalar(select(Partner).where(Partner.id == partner_id).with_for_update())
+    return None
+
+
 def _results(db: Session, run: CheckRun) -> list[CheckResult]:
     return list(db.scalars(select(CheckResult).where(CheckResult.run_id == run.id)))
 
@@ -175,12 +197,15 @@ def start_check_run(
 
     Poll GET /runs/{id} for progress. Sources that need a VAT number give
     NOT_APPLICABLE for partners without one; a source that fails or is too late
-    gives ERROR and makes the run incomplete.
+    gives ERROR and makes the run incomplete. While a run of the partner is still
+    going on, the same run is returned instead of starting another one (so the
+    sources are not flooded with requests).
     """
     partner = db.scalar(
-        select(Partner).where(
-            Partner.id == partner_id, Partner.organization_id == organization_id
-        )
+        select(Partner)
+        .where(Partner.id == partner_id, Partner.organization_id == organization_id)
+        # Two clicks at the same moment: the second waits here, then finds the run.
+        .with_for_update()
     )
     if partner is None:
         raise api_error(
@@ -194,6 +219,9 @@ def start_check_run(
             "partner_archived",
             "This partner is archived. Restore it before checking it again.",
         )
+    running = _running_run(db, partner.id)
+    if running is not None:
+        return RunRead.from_run(running, _results(db, running))
     run = start_run(
         db,
         organization_id=organization_id,

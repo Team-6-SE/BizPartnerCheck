@@ -9,6 +9,11 @@ same time. The start returns at once; the client polls until the run is finished
 
 `POST /api/v1/partners/{partner_id}/runs` → `202 Accepted`
 
+One run per partner at a time: while a run of the partner is still `running`, the endpoint
+returns that run instead of starting a second one (the partner row is locked, so two clicks
+at the same moment also give one run). A run that hangs longer than `CHECK_RUN_STALE_SECONDS`
+is closed as interrupted first, and a new run starts.
+
 ```json
 {
   "id": "6f1c…",
@@ -46,14 +51,20 @@ order of `sources`; a source without a result is still waiting. Each result is t
 - A source that is still asking when the time limit is over (`CHECK_RUN_DEADLINE_SECONDS`,
   default 30) gets `ERROR` ("did not answer within 30 s"); the others are stored normally.
 - `ERROR` results are stored too, as evidence that the source could not be asked.
+- BMF compares the company name. In a run it waits for VIES and uses the name VIES has just
+  returned; if VIES gives no name (error, invalid, fake answer), it uses the name from an
+  earlier check or the name entered for the partner. BMF does not wait longer than until
+  5 s before the run's time limit, so a slow VIES never costs the BMF result.
 
 ## Data model
 
 - `check_runs`: `id`, `organization_id`, `partner_id`, `status`, `sources` (JSON list),
   `started_by` (Keycloak user ID), `started_at`, `finished_at`.
 - `check_results.run_id` links each result to its run (empty for older single-source checks).
-- The run's final status and all its results are stored in one transaction
-  (`app/checks/runs.py`, `finish_run`).
+- Each result is stored in its own short transaction as soon as its source answers
+  (`record_result`), so polling shows the progress source by source.
+- At the end `finish_run` adds `ERROR` for sources that did not answer and sets the final
+  status, under a lock on the run row, so a result can never be added to a finished run.
 
 ## Code
 

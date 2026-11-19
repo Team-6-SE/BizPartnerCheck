@@ -1,9 +1,10 @@
 """Starting and finishing check runs (S5.1, T5.1.1).
 
-A run is created as "running" with the list of sources it will ask. When the sources
-have answered, finish_run() stores every answer as a check_results row of the run and
-sets the final status in the same transaction, so a run is never "complete" without
-its results and results never exist without their run.
+A run is created as "running" with the list of sources it will ask. Each answer is
+stored as soon as its source has answered (record_result, one short transaction), so
+the progress screen sees the results one by one. finish_run() then stores ERROR for
+the sources that were too late and sets the final status, under the same row lock,
+so a run is never "complete" without its results.
 
     complete    every source of the run gave a result that is not ERROR
     incomplete  at least one source failed (ERROR) or gave no answer at all
@@ -69,12 +70,60 @@ def start_run(
 
 def final_status(sources: Iterable[str], results: Iterable[SourceResult]) -> str:
     """complete if every source has a result that is not ERROR, else incomplete."""
-    by_source = {result.source: result for result in results}
+    return _status_of(sources, {r.source: r.status.value for r in results})
+
+
+def _status_of(sources: Iterable[str], statuses: dict[str, str]) -> str:
     for source in sources:
-        result = by_source.get(source)
-        if result is None or result.status == CheckStatus.ERROR:
+        status = statuses.get(source)
+        if status is None or status == CheckStatus.ERROR.value:
             return INCOMPLETE
     return COMPLETE
+
+
+def _stored_statuses(db: Session, run_id: uuid.UUID) -> dict[str, str]:
+    rows = db.execute(
+        select(CheckResult.source, CheckResult.status).where(
+            CheckResult.run_id == run_id
+        )
+    ).all()
+    return {source: status for source, status in rows}
+
+
+def _row(run: CheckRun, result: SourceResult) -> CheckResult:
+    return CheckResult(
+        partner_id=run.partner_id,
+        run_id=run.id,
+        source=result.source,
+        status=result.status.value,
+        checked_at=result.retrieved_at,
+        raw_response=result.raw,
+        explanation=result.explanation,
+        data_as_of=result.data_as_of,
+    )
+
+
+def record_result(db: Session, run: CheckRun, result: SourceResult) -> bool:
+    """Store one source's answer right away, so the progress screen can show it.
+
+    Nothing is stored (False) if the run is no longer running (e.g. closed as
+    interrupted), the source is not part of the run, or it already has a result.
+    """
+    try:
+        db.refresh(run, with_for_update=True)
+        if (
+            run.status != RUNNING
+            or result.source not in run.sources
+            or result.source in _stored_statuses(db, run.id)
+        ):
+            db.rollback()
+            return False
+        db.add(_row(run, result))
+        db.commit()
+        return True
+    except Exception:
+        db.rollback()
+        raise
 
 
 def finish_run(
@@ -84,10 +133,11 @@ def finish_run(
     *,
     now: datetime | None = None,
 ) -> CheckRun:
-    """Store the answers of the run's sources and its final status in one transaction.
+    """Store the answers not stored yet and the run's final status in one transaction.
 
-    Answers for sources that are not part of the run are ignored; sources without an
-    answer make the run incomplete. A run that is already finished is not changed.
+    Answers already stored by record_result are kept as they are; answers for sources
+    that are not part of the run are ignored; sources without an answer make the run
+    incomplete. A run that is already finished is not changed.
     """
     # Read the status again and lock the row: the run may have been closed as
     # interrupted (close_stale_runs) while its sources were being asked.
@@ -95,23 +145,13 @@ def finish_run(
     if run.status != RUNNING:
         db.rollback()
         raise ValueError(f"Check run {run.id} is already {run.status}.")
-    wanted = set(run.sources)
-    kept = [result for result in results if result.source in wanted]
     try:
-        for result in kept:
-            db.add(
-                CheckResult(
-                    partner_id=run.partner_id,
-                    run_id=run.id,
-                    source=result.source,
-                    status=result.status.value,
-                    checked_at=result.retrieved_at,
-                    raw_response=result.raw,
-                    explanation=result.explanation,
-                    data_as_of=result.data_as_of,
-                )
-            )
-        run.status = final_status(run.sources, kept)
+        statuses = _stored_statuses(db, run.id)
+        for result in results:
+            if result.source in run.sources and result.source not in statuses:
+                db.add(_row(run, result))
+                statuses[result.source] = result.status.value
+        run.status = _status_of(run.sources, statuses)
         run.finished_at = now or datetime.now(UTC)
         db.commit()
     except Exception:
@@ -136,7 +176,10 @@ def is_stale(run: CheckRun, *, now: datetime | None = None) -> bool:
 
 
 def _close_interrupted(db: Session, run: CheckRun, now: datetime) -> None:
+    answered = _stored_statuses(db, run.id)
     for source in run.sources:
+        if source in answered:
+            continue
         db.add(
             CheckResult(
                 partner_id=run.partner_id,

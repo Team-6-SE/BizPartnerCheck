@@ -1,7 +1,6 @@
 """Re-running a check (S5.3): a new run, the old one unchanged, changes highlighted."""
 
 import uuid
-from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -90,7 +89,7 @@ def test_a_changed_status_is_reported(client: TestClient, fake_vies) -> None:
 
 
 def test_compared_with_the_latest_finished_run_of_the_same_partner(
-    client: TestClient, db: Session, fake_vies
+    client: TestClient, fake_vies
 ) -> None:
     partner_id = add_partner(client)
     other_id = add_partner(client, "ATU33864707")
@@ -98,17 +97,6 @@ def test_compared_with_the_latest_finished_run_of_the_same_partner(
     fake_vies.answer = INVALID
     latest = run_check(client, partner_id)
     run_check(client, other_id)  # another partner: never compared
-    # A run that is still going on is not a "previous" run.
-    db.add(
-        CheckRun(
-            organization_id=db.get(CheckRun, uuid.UUID(latest["id"])).organization_id,
-            partner_id=uuid.UUID(partner_id),
-            status="running",
-            sources=["VIES"],
-            started_at=datetime.now(UTC),
-        )
-    )
-    db.commit()
 
     third = run_check(client, partner_id)
 

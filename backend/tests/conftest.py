@@ -1,7 +1,8 @@
 import os
+import threading
 import time
 from collections.abc import Iterator
-from contextlib import nullcontext
+from contextlib import contextmanager
 from typing import Any
 
 import jwt
@@ -257,8 +258,17 @@ def anonymous_client(
 ) -> Iterator[TestClient]:
     """A client without sign-in token."""
     app.dependency_overrides[get_db] = lambda: db
-    # Check runs go on after the response; in tests they use the same session.
-    app.dependency_overrides[get_session_factory] = lambda: lambda: nullcontext(db)
+    # Check runs go on after the response; in tests they use the same session. The
+    # sources run in threads and store their answers one by one, so the shared test
+    # session is used by one thread at a time.
+    lock = threading.RLock()
+
+    @contextmanager
+    def one_at_a_time() -> Iterator[Session]:
+        with lock:
+            yield db
+
+    app.dependency_overrides[get_session_factory] = lambda: one_at_a_time
     # No Redis in tests: runs are executed by the API itself, right after the response.
     app.dependency_overrides[get_run_dispatcher] = lambda: run_in_background
     # Tests never call the real VIES, the real ÖGK service or the real Keycloak.

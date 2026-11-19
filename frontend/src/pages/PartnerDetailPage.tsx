@@ -77,11 +77,13 @@ export function PartnerDetailPage() {
     setChecking(true)
     setChanges(null)
     setCheckError('')
+    let started = false
     try {
       // A re-run is a new run: earlier results stay unchanged in the history below.
-      const started = await startCheckRun(current.id)
-      setWaiting(waitingSources(started))
-      const run = await waitForCheckRun(started, {
+      const firstRun = await startCheckRun(current.id)
+      started = true
+      setWaiting(waitingSources(firstRun))
+      const run = await waitForCheckRun(firstRun, {
         onProgress: (progress) => setWaiting(progress.status === 'running' ? waitingSources(progress) : []),
       })
       if (run.status === 'running') {
@@ -93,8 +95,11 @@ export function PartnerDetailPage() {
       setPartner(partnerResult)
       setChecks(checkResults)
     } catch (err) {
+      // Once the run has started it keeps going even if one status request fails.
       setCheckError(
-        `The check could not start: ${err instanceof ApiError ? err.message : 'Something went wrong. Please try again.'}`,
+        started
+          ? 'Lost contact with the check. It keeps running; reload the page in a moment to see the results.'
+          : `The check could not start: ${err instanceof ApiError ? err.message : 'Something went wrong. Please try again.'}`,
       )
     } finally {
       setWaiting([])
