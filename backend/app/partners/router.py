@@ -10,9 +10,10 @@ from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.adapters import bmf, hfu, vies
+from app.adapters import bmf, firmenbuch, hfu, vies
 from app.adapters.base import CheckStatus, CheckSubject, SourceAdapter
 from app.adapters.bmf import get_bmf_adapter
+from app.adapters.firmenbuch import get_firmenbuch_adapter
 from app.adapters.hfu import get_hfu_adapter
 from app.adapters.vies import get_vies_adapter
 from app.db.session import get_db
@@ -37,8 +38,9 @@ OrganizationId = Annotated[uuid.UUID, Depends(get_current_organization_id)]
 Vies = Annotated[SourceAdapter, Depends(get_vies_adapter)]
 Bmf = Annotated[SourceAdapter, Depends(get_bmf_adapter)]
 Hfu = Annotated[SourceAdapter, Depends(get_hfu_adapter)]
+Firmenbuch = Annotated[SourceAdapter, Depends(get_firmenbuch_adapter)]
 # Sources whose latest result the partner list shows.
-LISTED_SOURCES = (vies.SOURCE, bmf.SOURCE, hfu.SOURCE)
+LISTED_SOURCES = (vies.SOURCE, bmf.SOURCE, hfu.SOURCE, firmenbuch.SOURCE)
 
 UNIQUE_VAT_CONSTRAINT = "uq_partners_organization_vat"
 UNIQUE_REGISTER_CONSTRAINT = "uq_partners_organization_register"
@@ -61,6 +63,75 @@ class PartnerUpdate(BaseModel):
     company_name: str | None = Field(default=None, max_length=255)
 
 
+class RegisterFlag(BaseModel):
+    """A Firmenbuch entry that marks the company as not (fully) active."""
+
+    # deleted, insolvency or liquidation
+    kind: str
+    # In words, e.g. "insolvency proceedings".
+    label: str
+    # The register's own text, e.g. "Konkurs eröffnet".
+    text: str | None = None
+    date: str | None = None
+    # Insolvency proceedings that are over (gives REVIEW, not FINDING).
+    ended: bool = False
+
+
+class RegisterPerson(BaseModel):
+    """A managing director, shareholder, ...: only name, role and start date."""
+
+    name: str | None
+    role: str | None
+    since: str | None = None
+
+
+class RegisterDetails(BaseModel):
+    """What the Firmenbuch says about the company (S4.5)."""
+
+    # False: the register has no company with this number.
+    found: bool
+    register_number: str | None = None
+    legal_form: str | None = None
+    seat: str | None = None
+    flags: list[RegisterFlag] = []
+    persons: list[RegisterPerson] = []
+
+    @classmethod
+    def from_raw(cls, raw: dict) -> "RegisterDetails | None":
+        if raw.get("notFound") is True:
+            return cls(found=False, register_number=firmenbuch.register_number(raw))
+        if not firmenbuch.company_name(raw):
+            return None  # an error: nothing to show
+        persons = raw.get("persons")
+        return cls(
+            found=True,
+            register_number=firmenbuch.register_number(raw),
+            legal_form=firmenbuch.legal_form(raw),
+            seat=firmenbuch.seat(raw),
+            flags=[
+                RegisterFlag(
+                    kind=flag["kind"],
+                    label=firmenbuch.FLAG_LABELS.get(flag["kind"], flag["kind"]),
+                    text=flag.get("text"),
+                    date=flag.get("date"),
+                    ended=flag.get("ended", False),
+                )
+                for flag in firmenbuch.status_flags(raw)
+            ],
+            persons=[
+                RegisterPerson(
+                    name=person.get("name"),
+                    role=person.get("role"),
+                    since=person.get("since"),
+                )
+                for person in persons
+                if isinstance(person, dict)
+            ]
+            if isinstance(persons, list)
+            else [],
+        )
+
+
 class CheckRead(BaseModel):
     id: uuid.UUID
     source: str
@@ -74,11 +145,15 @@ class CheckRead(BaseModel):
     data_as_of: datetime | None = None
     address: str | None = None
     consultation_number: str | None = None
+    # Firmenbuch only: legal form, seat, status flags and persons.
+    register_details: RegisterDetails | None = None
 
     @classmethod
     def from_result(cls, result: CheckResult) -> "CheckRead":
         status_ = CheckStatus(result.status)
         is_vies = result.source == vies.SOURCE
+        is_register = result.source == firmenbuch.SOURCE
+        raw = result.raw_response
         message = result.explanation
         if message is None and is_vies:
             # Checks stored before the explanation was saved.
@@ -91,18 +166,21 @@ class CheckRead(BaseModel):
             message=message or "",
             data_as_of=result.data_as_of,
             company_name=(
-                vies.company_name(result.raw_response)
+                vies.company_name(raw)
                 if is_vies and status_ == CheckStatus.OK
+                else firmenbuch.company_name(raw)
+                if is_register
                 else None
             ),
             address=(
-                vies.registered_address(result.raw_response)
+                vies.registered_address(raw)
                 if is_vies and status_ == CheckStatus.OK
+                else firmenbuch.address_text(raw)
+                if is_register
                 else None
             ),
-            consultation_number=(
-                vies.consultation_number(result.raw_response) if is_vies else None
-            ),
+            consultation_number=(vies.consultation_number(raw) if is_vies else None),
+            register_details=(RegisterDetails.from_raw(raw) if is_register else None),
         )
 
 
@@ -119,6 +197,7 @@ class PartnerRead(BaseModel):
     latest_vies_check: CheckRead | None = None
     latest_bmf_check: CheckRead | None = None
     latest_hfu_check: CheckRead | None = None
+    latest_firmenbuch_check: CheckRead | None = None
 
 
 class PartnerPage(BaseModel):
@@ -321,7 +400,7 @@ def list_partners(
 
 
 def _with_latest_checks(db: Session, partners: Sequence[Partner]) -> list[PartnerRead]:
-    """The partners with their latest VIES, BMF and HFU result (one query for all of them)."""
+    """The partners with their latest result per listed source (one query for all of them)."""
     partner_ids = [partner.id for partner in partners]
     latest = db.scalars(
         select(CheckResult)
@@ -356,6 +435,7 @@ def _with_latest_checks(db: Session, partners: Sequence[Partner]) -> list[Partne
             latest_vies_check=read(partner, vies.SOURCE),
             latest_bmf_check=read(partner, bmf.SOURCE),
             latest_hfu_check=read(partner, hfu.SOURCE),
+            latest_firmenbuch_check=read(partner, firmenbuch.SOURCE),
         )
         for partner in partners
     ]
@@ -603,6 +683,38 @@ def run_hfu_check(
     return _run_check(db, organization_id, partner_id, adapter)
 
 
+@router.post(
+    "/{partner_id}/checks/firmenbuch",
+    response_model=CheckRead,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        404: {"description": "Partner not found"},
+        409: {"description": "Partner has no company register number or is archived"},
+    },
+)
+def run_firmenbuch_check(
+    partner_id: uuid.UUID,
+    db: DbSession,
+    organization_id: OrganizationId,
+    adapter: Firmenbuch,
+) -> CheckRead:
+    """Ask the Firmenbuch (Austrian company register) about the partner's FN.
+
+    OK: registered and active, with name, seat and legal form. FINDING: deleted,
+    insolvency or liquidation (the flag is shown), or no company with this FN.
+    REVIEW: only insolvency proceedings that have ended. ERROR: the register could
+    not be asked (also when the API key is not set on the server).
+    """
+    return _run_check(
+        db,
+        organization_id,
+        partner_id,
+        adapter,
+        needs_vat_number=False,
+        needs_register_number=True,
+    )
+
+
 def _company_name(db: Session, partner_id: uuid.UUID) -> str | None:
     """The registered name from the latest valid VIES check, if there is one."""
     result = db.scalar(
@@ -628,6 +740,7 @@ def _run_check(
     adapter: SourceAdapter,
     *,
     needs_vat_number: bool = True,
+    needs_register_number: bool = False,
 ) -> CheckRead:
     """Check one partner against one source and store the common result.
 
@@ -661,6 +774,15 @@ def _run_check(
             "no_vat_number",
             f"This partner has no VAT number, so {adapter.source} cannot check it.",
             field="vat_number",
+        )
+    if partner.company_register_number is None and needs_register_number:
+        # E.g. a foreign partner: the Firmenbuch identifies companies by FN only.
+        raise api_error(
+            status.HTTP_409_CONFLICT,
+            "no_register_number",
+            "This partner has no company register number, so the Firmenbuch "
+            "cannot check it.",
+            field="company_register_number",
         )
     requester_vat = db.scalar(
         select(Organization.vat_number).where(Organization.id == organization_id)

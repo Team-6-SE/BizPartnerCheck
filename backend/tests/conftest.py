@@ -13,7 +13,8 @@ from sqlalchemy import delete, inspect, text, update
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from app.adapters.base import CheckSubject
+from app.adapters.base import CheckSubject, Scenario
+from app.adapters.firmenbuch import FirmenbuchAdapter, get_firmenbuch_adapter
 from app.adapters.hfu import HfuAdapter, get_hfu_adapter
 from app.adapters.vies import ViesAdapter, get_vies_adapter
 from app.auth import TokenVerifier, get_token_verifier
@@ -36,6 +37,9 @@ os.environ["SECURITY_EVENTS_SYNC_SECONDS"] = "0"
 os.environ["BMF_IMPORT_INTERVAL_SECONDS"] = "0"
 # Tests do not close interrupted check runs in the real database at startup.
 os.environ["CHECK_RUN_STARTUP_CLEANUP"] = "0"
+# Check runs ask the Firmenbuch only when it is set up; tests that need it say so.
+os.environ.pop("FIRMENBUCH_API_KEY", None)
+os.environ.pop("FIRMENBUCH_ADAPTER", None)
 
 from app.main import app
 from app.security.keycloak import get_keycloak_client
@@ -107,6 +111,24 @@ class FakeHfu(HfuAdapter):
         if not subject.requester_vat:
             # The real adapter answers without a request in this case.
             return super().query(subject, timeout)
+        return self.answer
+
+
+class FakeFirmenbuch(FirmenbuchAdapter):
+    """Stands in for the Firmenbuch in API tests: answer chosen by the test.
+
+    The answer starts as the adapter's own sample of a registered, active company.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(api_key="test-key", sleep=lambda _seconds: None)
+        self.answer: dict[str, Any] = self.sample_answer(
+            Scenario.OK, CheckSubject(vat_number=None, register_number="123456a")
+        )
+        self.checked: list[str | None] = []
+
+    def query(self, subject: CheckSubject, timeout: float) -> dict[str, Any]:
+        self.checked.append(subject.register_number)
         return self.answer
 
 
@@ -253,8 +275,17 @@ def fake_hfu() -> FakeHfu:
 
 
 @pytest.fixture
+def fake_firmenbuch() -> FakeFirmenbuch:
+    return FakeFirmenbuch()
+
+
+@pytest.fixture
 def anonymous_client(
-    db: Session, fake_vies: FakeVies, fake_hfu: FakeHfu, tokens: TokenFactory
+    db: Session,
+    fake_vies: FakeVies,
+    fake_hfu: FakeHfu,
+    fake_firmenbuch: FakeFirmenbuch,
+    tokens: TokenFactory,
 ) -> Iterator[TestClient]:
     """A client without sign-in token."""
     app.dependency_overrides[get_db] = lambda: db
@@ -271,9 +302,10 @@ def anonymous_client(
     app.dependency_overrides[get_session_factory] = lambda: one_at_a_time
     # No Redis in tests: runs are executed by the API itself, right after the response.
     app.dependency_overrides[get_run_dispatcher] = lambda: run_in_background
-    # Tests never call the real VIES, the real ÖGK service or the real Keycloak.
+    # Tests never call the real VIES, ÖGK service, Firmenbuch or Keycloak.
     app.dependency_overrides[get_vies_adapter] = lambda: fake_vies
     app.dependency_overrides[get_hfu_adapter] = lambda: fake_hfu
+    app.dependency_overrides[get_firmenbuch_adapter] = lambda: fake_firmenbuch
     app.dependency_overrides[get_token_verifier] = tokens.verifier
     app.dependency_overrides[get_keycloak_client] = lambda: None
     try:

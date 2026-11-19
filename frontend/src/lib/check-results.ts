@@ -32,8 +32,19 @@ export const HFU_LABELS: Labels = {
   ERROR: 'Error',
 }
 
-/** The backend names sources in capitals ("VIES", "BMF", "HFU"); compare without case. */
-function isSource(source: string, name: 'VIES' | 'BMF' | 'HFU'): boolean {
+// Firmenbuch (company register): OK means registered and active.
+export const FIRMENBUCH_LABELS: Labels = {
+  OK: 'Registered',
+  FINDING: 'Flagged',
+  REVIEW: 'Please review',
+  NOT_APPLICABLE: 'Not applicable',
+  ERROR: 'Error',
+}
+
+type SourceKey = 'VIES' | 'BMF' | 'HFU' | 'FIRMENBUCH'
+
+/** The backend names sources in capitals ("VIES", "BMF", "HFU", "FIRMENBUCH"); compare without case. */
+function isSource(source: string, name: SourceKey): boolean {
   return source.toUpperCase() === name
 }
 
@@ -41,6 +52,7 @@ function isSource(source: string, name: 'VIES' | 'BMF' | 'HFU'): boolean {
 export function labelsFor(source: string): Labels {
   if (isSource(source, 'BMF')) return BMF_LABELS
   if (isSource(source, 'HFU')) return HFU_LABELS
+  if (isSource(source, 'FIRMENBUCH')) return FIRMENBUCH_LABELS
   return VIES_LABELS
 }
 
@@ -48,6 +60,7 @@ export function labelsFor(source: string): Labels {
 export function sourceName(source: string): string {
   if (isSource(source, 'BMF')) return 'BMF list'
   if (isSource(source, 'HFU')) return 'HFU list'
+  if (isSource(source, 'FIRMENBUCH')) return 'Firmenbuch'
   return source.toUpperCase()
 }
 
@@ -59,6 +72,15 @@ export function isStale(check: CheckResult): boolean {
   return new Date(check.checked_at).getTime() - new Date(check.data_as_of).getTime() > MAX_LIST_AGE_MS
 }
 
+/**
+ * The word on the badge. A Firmenbuch FINDING is either a flag (deleted, insolvency, ...)
+ * or "no company with this number"; the two must look different.
+ */
+export function statusLabel(check: CheckResult, labels: Labels = labelsFor(check.source)): string {
+  if (check.status === 'FINDING' && check.register_details?.found === false) return 'Not in register'
+  return labels[check.status]
+}
+
 /** VIES said "valid" but the country shares neither name nor address (VIES answers "---"). */
 export function viesWithoutDetails(check: CheckResult): boolean {
   return isSource(check.source, 'VIES') && check.status === 'OK' && !check.company_name && !check.address
@@ -68,4 +90,17 @@ export function viesWithoutDetails(check: CheckResult): boolean {
 export function changeText(change: RunChange): string {
   const labels = labelsFor(change.source)
   return `${labels[change.previous_status]} → ${labels[change.status]}`
+}
+
+/** "insolvency proceedings" -> "Insolvency proceedings". */
+export function sentenceCase(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+/** The register writes roles in capitals ("GESELLSCHAFTER/IN"); show them in sentence case. */
+export function roleText(role: string | null): string {
+  if (!role) return 'Function'
+  // Only words in capitals change: "GESCHÄFTSFÜHRER/IN (handelsrechtlich)" -> "Geschäftsführer/in (handelsrechtlich)".
+  const lowered = role.replace(/\S+/g, (word) => (word.length > 1 && word === word.toUpperCase() ? word.toLowerCase() : word))
+  return lowered === role ? role : sentenceCase(lowered)
 }
