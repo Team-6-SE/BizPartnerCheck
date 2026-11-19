@@ -36,20 +36,24 @@ slow = pytest.mark.skipif(
 RUNS = 20
 WORKERS = int(os.environ.get("PERF_WORKERS", "4"))
 SOURCE_DELAY_SECONDS = 2.0
+# BMF is a lookup in our own database (the imported list): milliseconds, not seconds.
+# It waits for VIES in a run, so a 2 s stub here would double every run.
+LOCAL_DELAY_SECONDS = {"BMF": 0.05}
 LIMIT_SECONDS = 15.0
 SHARE = 0.95
 SOURCES = ("VIES", "BMF", "HFU")
 
 
 class StubSource(SourceAdapter):
-    """A source that always answers OK after 2 s, without network."""
+    """A source that always answers OK after its delay, without network."""
 
     def __init__(self, source: str) -> None:
         self.source = source  # read by the base class for its time limits
         super().__init__()
+        self.delay = LOCAL_DELAY_SECONDS.get(source, SOURCE_DELAY_SECONDS)
 
     def check(self, subject: CheckSubject) -> SourceResult:
-        time.sleep(SOURCE_DELAY_SECONDS)
+        time.sleep(self.delay)
         return SourceResult(
             self.source, CheckStatus.OK, "stub", datetime.now(UTC), None, {"stub": 1}
         )
@@ -112,7 +116,8 @@ def test_95_percent_of_20_parallel_runs_finish_within_15_seconds() -> None:
         p95 = percentile(durations, SHARE)
         print(
             f"\n{RUNS} runs, {WORKERS} workers, sources answer after "
-            f"{SOURCE_DELAY_SECONDS:g} s: fastest {min(durations):.1f} s, "
+            f"{SOURCE_DELAY_SECONDS:g} s (BMF {LOCAL_DELAY_SECONDS['BMF']:g} s): "
+            f"fastest {min(durations):.1f} s, "
             f"95 % within {p95:.1f} s, slowest {max(durations):.1f} s"
         )
 

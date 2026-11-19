@@ -134,7 +134,9 @@ partner page, which also has its own "Check again" button.
 ## Performance (T5.1.6)
 
 `tests/test_check_run_performance.py` starts 20 runs at once with 4 parallel workers and stub
-sources that answer after 2 s; 95 % must be finished within 15 s (expected: about 10 s). It is slow
+sources: VIES and HFU answer after 2 s, BMF after 50 ms (like the real lookup in the imported
+list). 95 % must be finished within 15 s (expected: about 10 s). BMF waits for VIES, so a run
+takes about as long as VIES plus BMF, in parallel with HFU. It is slow
 and writes to the database, so it only runs on request:
 
 ```powershell
