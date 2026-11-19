@@ -10,15 +10,20 @@ import {
   listPartners,
   partnerLabel,
   restorePartner,
-  runBmfCheck,
-  runHfuCheck,
-  runViesCheck,
   updatePartner,
   type Partner,
 } from '@/api/partners'
+import {
+  startCheckRun,
+  waitForCheckRun,
+  waitingSources as sourcesWaiting,
+  type CheckRun,
+  type RunChange,
+} from '@/api/check-runs'
+import { ChangedSince } from '@/components/check-changes'
 import { CheckResultView } from '@/components/check-result'
 import { PageHeader } from '@/components/page-header'
-import { BMF_LABELS, HFU_LABELS, VIES_LABELS } from '@/lib/check-results'
+import { BMF_LABELS, HFU_LABELS, VIES_LABELS, labelsFor, sourceName } from '@/lib/check-results'
 import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -47,6 +52,13 @@ const dateFormat = new Intl.DateTimeFormat(undefined, {
 
 // Wait this long after the last key press before searching (one request, not one per key).
 const SEARCH_DELAY_MS = 300
+
+// Which field of a partner holds the latest result of a source.
+const LATEST_FIELD: Record<string, 'latest_vies_check' | 'latest_bmf_check' | 'latest_hfu_check'> = {
+  VIES: 'latest_vies_check',
+  BMF: 'latest_bmf_check',
+  HFU: 'latest_hfu_check',
+}
 
 function errorMessage(error: unknown): string {
   return error instanceof ApiError ? error.message : 'Something went wrong. Please try again.'
@@ -89,8 +101,12 @@ export function PartnersPage() {
   const [announcement, setAnnouncement] = useState('')
   const [newPartnerId, setNewPartnerId] = useState<string | null>(null)
 
-  // Checks (VIES, then BMF): which partners are being checked, and requests that failed.
+  // Check runs: which partners are being checked, their sources without a result yet,
+  // and runs that could not start or did not finish.
   const [checkingIds, setCheckingIds] = useState<ReadonlySet<string>>(new Set())
+  const [waitingSources, setWaitingSources] = useState<Record<string, string[]>>({})
+  // Sources whose status changed in the partner's last run (S5.3), per partner.
+  const [changes, setChanges] = useState<Record<string, RunChange[]>>({})
   const [checkErrors, setCheckErrors] = useState<Record<string, string[]>>({})
   const [freshCheckIds, setFreshCheckIds] = useState<ReadonlySet<string>>(new Set())
   const checkingRef = useRef(new Set<string>())
@@ -243,49 +259,53 @@ export function PartnersPage() {
     checkingRef.current.add(partner.id)
     setCheckingIds(new Set(checkingRef.current))
     setCheckErrors(({ [partner.id]: _old, ...rest }) => rest)
+    setChanges(({ [partner.id]: _old, ...rest }) => rest)
     const label = partnerLabel(partner)
-    // VIES and the HFU list need a VAT number; the BMF list can also match the company register number.
-    const sources = partner.vat_number ? 'VIES, the BMF list and the HFU list' : 'the BMF list'
-    setAnnouncement(`Checking ${label} in ${sources}…`)
+    setAnnouncement(`Checking ${label} in VIES, the BMF list and the HFU list…`)
 
-    const errors: string[] = []
-    const fresh: string[] = []
-    const said: string[] = []
-    try {
-      // VIES first: the BMF check compares the company name that VIES returns.
-      if (partner.vat_number) {
-        try {
-          const result = await runViesCheck(partner.id)
-          updateInLists(partner.id, (item) => ({ ...item, latest_vies_check: result }))
-          fresh.push(result.id)
-          said.push(`VIES: ${VIES_LABELS[result.status]}.`)
-        } catch (error) {
-          errors.push(`VIES: ${errorMessage(error)}`)
-        }
-      }
-      try {
-        const result = await runBmfCheck(partner.id)
-        updateInLists(partner.id, (item) => ({ ...item, latest_bmf_check: result }))
-        fresh.push(result.id)
-        said.push(`BMF list: ${BMF_LABELS[result.status]}. ${result.message}`)
-      } catch (error) {
-        errors.push(`BMF list: ${errorMessage(error)}`)
-      }
-      // HFU list (contractor liability): the ÖGK identifies the partner by its VAT number.
-      if (partner.vat_number) {
-        try {
-          const result = await runHfuCheck(partner.id)
-          updateInLists(partner.id, (item) => ({ ...item, latest_hfu_check: result }))
-          fresh.push(result.id)
-          said.push(`HFU list: ${HFU_LABELS[result.status]}. ${result.message}`)
-        } catch (error) {
-          errors.push(`HFU list: ${errorMessage(error)}`)
-        }
+    const fresh = new Set<string>()
+    // Show every result as soon as it is there, and "Checking…" for the sources still asked.
+    const show = (run: CheckRun) => {
+      for (const result of run.results) {
+        const field = LATEST_FIELD[result.source.toUpperCase()]
+        if (!field || fresh.has(result.id)) continue
+        fresh.add(result.id)
+        updateInLists(partner.id, (item) => ({ ...item, [field]: result }))
       }
       setFreshCheckIds(new Set(fresh))
-      if (errors.length) setCheckErrors((current) => ({ ...current, [partner.id]: errors }))
-      setAnnouncement(`${label}: ${[...said, ...errors].join(' ')}`)
+      setWaitingSources((current) => ({
+        ...current,
+        [partner.id]: run.status === 'running' ? sourcesWaiting(run) : [],
+      }))
+    }
+
+    let started = false
+    try {
+      // The backend answers at once and asks all sources in parallel (S5.1).
+      const firstRun = await startCheckRun(partner.id)
+      started = true
+      show(firstRun)
+      const run = await waitForCheckRun(firstRun, { onProgress: show })
+      const said = run.results.map(
+        (result) => `${sourceName(result.source)}: ${labelsFor(result.source)[result.status]}.`,
+      )
+      if (run.changes.length) {
+        setChanges((current) => ({ ...current, [partner.id]: run.changes }))
+        said.push(`Changed since the last check: ${run.changes.map((c) => sourceName(c.source)).join(', ')}.`)
+      }
+      if (run.status === 'running') {
+        const message = 'The check is taking longer than expected. Reload the page in a moment to see the results.'
+        setCheckErrors((current) => ({ ...current, [partner.id]: [message] }))
+        said.push(message)
+      }
+      setAnnouncement(`${label}: ${said.join(' ')}`)
+    } catch (error) {
+      // Once the run has started it keeps going even if one status request fails.
+      const message = started ? 'Lost contact with the check. It keeps running; reload the page in a moment to see the results.' : `The check could not start: ${errorMessage(error)}`
+      setCheckErrors((current) => ({ ...current, [partner.id]: [message] }))
+      setAnnouncement(`${label}: ${message}`)
     } finally {
+      setWaitingSources(({ [partner.id]: _old, ...rest }) => rest)
       checkingRef.current.delete(partner.id)
       setCheckingIds(new Set(checkingRef.current))
     }
@@ -570,6 +590,8 @@ export function PartnersPage() {
                     const hfuCheck = partner.latest_hfu_check
                     const errors = checkErrors[partner.id]
                     const checking = checkingIds.has(partner.id)
+                    const waiting = waitingSources[partner.id] ?? []
+                    const changed = changes[partner.id] ?? []
                     const viesCompanyName = check?.status === 'OK' ? check.company_name : null
                     const viesAddress = check?.status === 'OK' ? check.address : null
 
@@ -675,12 +697,17 @@ export function PartnersPage() {
                           />
                         </TableCell>
                         <TableCell className="min-w-44 align-top whitespace-normal">
-                          {check ? (
-                            <CheckResultView
-                              check={check}
-                              labels={VIES_LABELS}
-                              fresh={freshCheckIds.has(check.id)}
-                            />
+                          {waiting.includes('VIES') ? (
+                            <WaitingForSource />
+                          ) : check ? (
+                            <>
+                              <CheckResultView
+                                check={check}
+                                labels={VIES_LABELS}
+                                fresh={freshCheckIds.has(check.id)}
+                              />
+                              <ChangedSince changes={changed} source="VIES" />
+                            </>
                           ) : partner.vat_number ? (
                             <span className="text-muted-foreground">Not checked yet</span>
                           ) : (
@@ -688,28 +715,38 @@ export function PartnersPage() {
                           )}
                           {errors?.map((error) => (
                             <p key={error} className="mt-1 text-xs text-destructive">
-                              Check could not run: {error}
+                              {error}
                             </p>
                           ))}
                         </TableCell>
                         <TableCell className="min-w-52 align-top whitespace-normal">
-                          {bmfCheck ? (
-                            <CheckResultView
-                              check={bmfCheck}
-                              labels={BMF_LABELS}
-                              fresh={freshCheckIds.has(bmfCheck.id)}
-                            />
+                          {waiting.includes('BMF') ? (
+                            <WaitingForSource />
+                          ) : bmfCheck ? (
+                            <>
+                              <CheckResultView
+                                check={bmfCheck}
+                                labels={BMF_LABELS}
+                                fresh={freshCheckIds.has(bmfCheck.id)}
+                              />
+                              <ChangedSince changes={changed} source="BMF" />
+                            </>
                           ) : (
                             <span className="text-muted-foreground">Not checked yet</span>
                           )}
                         </TableCell>
                         <TableCell className="min-w-52 align-top whitespace-normal">
-                          {hfuCheck ? (
-                            <CheckResultView
-                              check={hfuCheck}
-                              labels={HFU_LABELS}
-                              fresh={freshCheckIds.has(hfuCheck.id)}
-                            />
+                          {waiting.includes('HFU') ? (
+                            <WaitingForSource />
+                          ) : hfuCheck ? (
+                            <>
+                              <CheckResultView
+                                check={hfuCheck}
+                                labels={HFU_LABELS}
+                                fresh={freshCheckIds.has(hfuCheck.id)}
+                              />
+                              <ChangedSince changes={changed} source="HFU" />
+                            </>
                           ) : partner.vat_number ? (
                             <span className="text-muted-foreground">Not checked yet</span>
                           ) : (
@@ -796,6 +833,16 @@ function CheckButton({
         {partnerLabel(partner)} {sources}
       </span>
     </Button>
+  )
+}
+
+/** A source of a running check that has not answered yet. */
+function WaitingForSource() {
+  return (
+    <span className="flex items-center gap-2 text-sm text-muted-foreground">
+      <Spinner />
+      Checking…
+    </span>
   )
 }
 

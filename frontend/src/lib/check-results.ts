@@ -1,3 +1,4 @@
+import type { RunChange } from '@/api/check-runs'
 import type { CheckResult, CheckStatus } from '@/api/partners'
 
 /** Words and small rules for check results, shared by the partner list and the partner page. */
@@ -61,4 +62,10 @@ export function isStale(check: CheckResult): boolean {
 /** VIES said "valid" but the country shares neither name nor address (VIES answers "---"). */
 export function viesWithoutDetails(check: CheckResult): boolean {
   return isSource(check.source, 'VIES') && check.status === 'OK' && !check.company_name && !check.address
+}
+
+/** Words for a change between two runs, e.g. "Valid → Invalid" (the words depend on the source). */
+export function changeText(change: RunChange): string {
+  const labels = labelsFor(change.source)
+  return `${labels[change.previous_status]} → ${labels[change.status]}`
 }

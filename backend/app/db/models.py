@@ -86,6 +86,47 @@ class Partner(Base):
     )
 
 
+class CheckRun(Base):
+    """One click on "Check": all sources asked for one partner (S5.1).
+
+    The run starts as "running"; when every source has answered (or the time limit is
+    over) it becomes "complete" (every source gave a result) or "incomplete" (at least
+    one source failed or did not answer). Its results are the check_results rows with
+    this run_id; the run and its results are stored in one transaction.
+    """
+
+    __tablename__ = "check_runs"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('running', 'complete', 'incomplete')",
+            name="ck_check_runs_status",
+        ),
+        # History of a partner and of an organisation, newest first.
+        Index("ix_check_runs_partner_started_at", "partner_id", "started_at"),
+        Index("ix_check_runs_organization_started_at", "organization_id", "started_at"),
+        # Finding runs left "running" after a crash (T5.1.5).
+        Index("ix_check_runs_status", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    partner_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("partners.id"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="running")
+    # The sources this run asks, e.g. ["VIES", "BMF", "HFU"]; the progress screen
+    # shows "waiting" for each of them until its result is stored.
+    sources: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    # Who started the run: the Keycloak user ID ("sub"), later also API tokens.
+    started_by: Mapped[str | None] = mapped_column(String(64))
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class CheckResult(Base):
     """One check of a partner against one source (e.g. VIES, BMF).
 
@@ -123,6 +164,11 @@ class CheckResult(Base):
     # How current the source's data was (imported lists such as BMF); empty for
     # live sources, whose data is as of checked_at.
     data_as_of: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The run this result belongs to; empty for single-source checks made before
+    # check runs existed (and for the old /checks/<source> endpoints).
+    run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("check_runs.id"), nullable=True, index=True
+    )
 
 
 class SecurityEvent(Base):

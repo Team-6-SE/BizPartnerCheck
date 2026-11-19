@@ -1,5 +1,23 @@
 name: bizpartnercheck
 
+# Settings shared by the backend and the worker: both run checks against the sources,
+# so both must use the same adapters, URLs and time limits. Empty means the default.
+x-backend-env: &backend-env
+  DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+  # Check runs go into the Redis queue; the worker executes them (S5.1).
+  CELERY_BROKER_URL: redis://redis:6379/0
+  # Fake sources for staging (fake-ok, fake-finding, fake-timeout, fake-malformed); empty = real.
+  VIES_ADAPTER: ${VIES_ADAPTER:-}
+  BMF_ADAPTER: ${BMF_ADAPTER:-}
+  HFU_ADAPTER: ${HFU_ADAPTER:-}
+  VIES_BASE_URL: ${VIES_BASE_URL:-}
+  HFU_BASE_URL: ${HFU_BASE_URL:-}
+  SOURCE_TIMEOUT_SECONDS: ${SOURCE_TIMEOUT_SECONDS:-8}
+  SOURCE_MAX_RETRIES: ${SOURCE_MAX_RETRIES:-2}
+  SOURCE_DEADLINE_SECONDS: ${SOURCE_DEADLINE_SECONDS:-30}
+  CHECK_RUN_DEADLINE_SECONDS: ${CHECK_RUN_DEADLINE_SECONDS:-30}
+  CHECK_RUN_STALE_SECONDS: ${CHECK_RUN_STALE_SECONDS:-120}
+
 services:
   db:
     image: postgres:17
@@ -22,7 +40,7 @@ services:
     restart: unless-stopped
     command: ["sh", "-c", "uv run --no-sync alembic upgrade head && uv run --no-sync uvicorn app.main:app --host 0.0.0.0 --port 8000"]
     environment:
-      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+      <<: *backend-env
       OIDC_ISSUER: ${OIDC_ISSUER:?Set OIDC_ISSUER}
       OIDC_JWKS_URL: ${OIDC_JWKS_URL:?Set OIDC_JWKS_URL}
       OIDC_AUDIENCE: bizpartnercheck-api
@@ -36,8 +54,28 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_started
     expose:
       - "8000"
+
+  # Executes check runs from the queue (S5.1). Same image as the backend; more workers:
+  # docker compose up -d --scale worker=2
+  worker:
+    image: ghcr.io/team-6-se/bizpartnercheck-backend:staging
+    restart: unless-stopped
+    command: ["uv", "run", "--no-sync", "celery", "-A", "app.worker", "worker", "--loglevel=info", "--concurrency=4"]
+    environment: *backend-env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  # Queue for check runs. No port to the outside; only backend and worker use it.
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
 
   frontend:
     image: ghcr.io/team-6-se/bizpartnercheck-frontend:staging

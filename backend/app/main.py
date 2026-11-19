@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import OperationalError
+from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.adapters import bmf, hfu, vies
@@ -12,6 +13,9 @@ from app.adapters.fake import check_adapter_settings
 from app.auth import AuthenticatedUser, get_current_user
 from app.bmf.background import bmf_import_schedule
 from app.bmf.router import router as bmf_admin_router
+from app.checks.router import router as runs_router
+from app.checks.runs import close_stale_runs_at_startup
+from app.db.session import SessionLocal
 from app.errors import error_body
 from app.organization.router import router as organization_router
 from app.partners.router import router as partners_router
@@ -27,6 +31,8 @@ SOURCES = (vies.SOURCE, bmf.SOURCE, hfu.SOURCE)
 async def lifespan(app_: FastAPI) -> AsyncIterator[None]:
     # Stops the start on a wrong {SOURCE}_ADAPTER value instead of failing every check.
     check_adapter_settings(SOURCES)
+    # Runs left "running" by a stopped process are closed as incomplete (T5.1.5).
+    await run_in_threadpool(close_stale_runs_at_startup, SessionLocal)
     async with security_event_sync(app_), bmf_import_schedule():
         yield
 
@@ -111,6 +117,7 @@ api.include_router(partners_router)
 api.include_router(organization_router)
 api.include_router(security_router)
 api.include_router(bmf_admin_router)
+api.include_router(runs_router)
 
 
 @api.get("/me", tags=["account"])

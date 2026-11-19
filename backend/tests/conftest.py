@@ -1,6 +1,8 @@
 import os
+import threading
 import time
 from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 import jwt
@@ -15,10 +17,13 @@ from app.adapters.base import CheckSubject
 from app.adapters.hfu import HfuAdapter, get_hfu_adapter
 from app.adapters.vies import ViesAdapter, get_vies_adapter
 from app.auth import TokenVerifier, get_token_verifier
+from app.checks.executor import get_session_factory
+from app.checks.queue import get_run_dispatcher, run_in_background
 from app.db.models import (
     BmfImport,
     BmfListEntry,
     CheckResult,
+    CheckRun,
     Organization,
     Partner,
     SecurityEvent,
@@ -29,6 +34,8 @@ from app.db.session import engine, get_db
 os.environ["SECURITY_EVENTS_SYNC_SECONDS"] = "0"
 # No background import of the BMF list while testing (app/bmf/background.py).
 os.environ["BMF_IMPORT_INTERVAL_SECONDS"] = "0"
+# Tests do not close interrupted check runs in the real database at startup.
+os.environ["CHECK_RUN_STARTUP_CLEANUP"] = "0"
 
 from app.main import app
 from app.security.keycloak import get_keycloak_client
@@ -182,7 +189,13 @@ def database_ready() -> None:
             "`docker compose -f infra/docker-compose.yml up -d`.",
             returncode=1,
         )
-    needed = {"partners", "check_results", "security_events", "bmf_list_entries"}
+    needed = {
+        "partners",
+        "check_results",
+        "check_runs",
+        "security_events",
+        "bmf_list_entries",
+    }
     if not needed <= set(tables):
         pytest.exit(
             "The database tables are missing. Run `uv run alembic upgrade head` in `backend`.",
@@ -207,6 +220,7 @@ def db(database_ready: None) -> Iterator[Session]:
         expire_on_commit=False,
     )
     session.execute(delete(CheckResult))
+    session.execute(delete(CheckRun))
     session.execute(delete(Partner))
     session.execute(delete(BmfListEntry))
     session.execute(delete(BmfImport))
@@ -244,6 +258,19 @@ def anonymous_client(
 ) -> Iterator[TestClient]:
     """A client without sign-in token."""
     app.dependency_overrides[get_db] = lambda: db
+    # Check runs go on after the response; in tests they use the same session. The
+    # sources run in threads and store their answers one by one, so the shared test
+    # session is used by one thread at a time.
+    lock = threading.RLock()
+
+    @contextmanager
+    def one_at_a_time() -> Iterator[Session]:
+        with lock:
+            yield db
+
+    app.dependency_overrides[get_session_factory] = lambda: one_at_a_time
+    # No Redis in tests: runs are executed by the API itself, right after the response.
+    app.dependency_overrides[get_run_dispatcher] = lambda: run_in_background
     # Tests never call the real VIES, the real ÖGK service or the real Keycloak.
     app.dependency_overrides[get_vies_adapter] = lambda: fake_vies
     app.dependency_overrides[get_hfu_adapter] = lambda: fake_hfu

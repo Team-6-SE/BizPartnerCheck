@@ -75,6 +75,9 @@ uv run uvicorn app.main:app --reload   # starts the API on http://localhost:8000
 - Test coverage: `uv run pytest --cov` (CI fails below 70 %)
 - The **Check** button needs internet: it asks the EU VIES service, then compares the partner with the BMF list of fake companies. Details: [docs/vies.md](docs/vies.md), [docs/bmf.md](docs/bmf.md)
 - The BMF list is imported in the background a few seconds after the API starts (then every 6 hours). Until then the BMF result is "Error: not imported yet".
+- **Check runs with a queue (optional):** set `CELERY_BROKER_URL=redis://localhost:6379/0` in `.env`, start Redis with the other containers (`docker compose -f infra/docker-compose.yml up -d`) and a worker in a second terminal:
+  `uv run celery -A app.worker worker --loglevel=info --pool=threads --concurrency=4`
+  Without `CELERY_BROKER_URL` the API runs the checks itself. Details: [docs/check-runs.md](docs/check-runs.md)
 
 ---
 ## Run the frontend (web app)

@@ -37,6 +37,13 @@ services:
     depends_on:
       - mailpit
 
+  # Queue for check runs (S5.1): the API puts runs here, the Celery worker takes them.
+  # Used only when CELERY_BROKER_URL is set (see .env.example and docs/check-runs.md).
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
   # Catches all e-mails (e.g. password reset) locally: open http://localhost:8025
   mailpit:
     image: axllent/mailpit:v1.32.0
