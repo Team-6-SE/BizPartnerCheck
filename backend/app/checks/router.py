@@ -28,7 +28,7 @@ from app.adapters.vies import get_vies_adapter
 from app.auth import AuthenticatedUser
 from app.checks.executor import SessionFactory, get_session_factory
 from app.checks.queue import RunDispatcher, get_run_dispatcher
-from app.checks.runs import finish_run, start_run
+from app.checks.runs import close_if_stale, finish_run, start_run
 from app.db.models import CheckResult, CheckRun, Partner
 from app.db.session import get_db
 from app.errors import api_error
@@ -177,5 +177,7 @@ def get_check_run(
         raise api_error(
             status.HTTP_404_NOT_FOUND, "run_not_found", "This check run does not exist."
         )
+    # A run interrupted by a crash would otherwise stay "running" forever (T5.1.5).
+    close_if_stale(db, run)
     results = list(db.scalars(select(CheckResult).where(CheckResult.run_id == run.id)))
     return RunRead.from_run(run, results)

@@ -90,8 +90,21 @@ Both call the same `execute_run`, so results are the same.
 | `backend/app/checks/tasks.py` | Task `checks.run_check` |
 | `backend/app/checks/queue.py` | Queue or API process, depending on `CELERY_BROKER_URL` |
 
+## Crash safety (T5.1.5)
+
+If the API process or a worker stops in the middle of a run, the run would stay `running`
+forever. A run that is still `running` more than `CHECK_RUN_STALE_SECONDS` (default 120) after it
+started is therefore closed as **incomplete**, with an `ERROR` result for every source
+("The check was interrupted before … answered"). This happens
+
+- when the API starts and when a Celery worker starts (`CHECK_RUN_STARTUP_CLEANUP=0` switches it
+  off; the tests do that),
+- whenever `GET /runs/{id}` reads such a run, so nobody has to wait for a restart.
+
+A worker that answers after its run was closed does not overwrite it (`finish_run` re-reads the
+run with a row lock). The 120 s leave room for runs that wait in the queue while all workers are
+busy; every run itself finishes within `CHECK_RUN_DEADLINE_SECONDS` (30).
+
 ## Not done yet
 
-- **Crash safety (T5.1.5):** runs left `running` when the API process or a worker stops without
-  finishing are not yet marked incomplete.
 - **Performance test (T5.1.6).**

@@ -33,6 +33,8 @@ from app.db.session import engine, get_db
 os.environ["SECURITY_EVENTS_SYNC_SECONDS"] = "0"
 # No background import of the BMF list while testing (app/bmf/background.py).
 os.environ["BMF_IMPORT_INTERVAL_SECONDS"] = "0"
+# Tests do not close interrupted check runs in the real database at startup.
+os.environ["CHECK_RUN_STARTUP_CLEANUP"] = "0"
 
 from app.main import app
 from app.security.keycloak import get_keycloak_client

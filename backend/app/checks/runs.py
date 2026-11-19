@@ -9,20 +9,38 @@ its results and results never exist without their run.
     incomplete  at least one source failed (ERROR) or gave no answer at all
 
 Who asks the sources (the worker, T5.1.2) is not part of this module.
+
+Crash safety (T5.1.5): a run that is still "running" long after it started belongs to
+an API process or worker that stopped without finishing it. close_stale_runs() closes
+such runs as incomplete, with an ERROR result for every source. It runs when the API
+or a worker starts, and for a single run whenever its status is read.
 """
 
+import logging
+import os
 import uuid
 from collections.abc import Iterable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.adapters.base import CheckStatus, SourceResult
 from app.db.models import CheckResult, CheckRun
 
+logger = logging.getLogger(__name__)
+
 RUNNING = "running"
 COMPLETE = "complete"
 INCOMPLETE = "incomplete"
+
+# A run is asked within 30 s; a run still "running" after this long was interrupted.
+# Generous, because a run may wait in the queue while all workers are busy.
+DEFAULT_STALE_SECONDS = 120
+INTERRUPTED = (
+    "The check was interrupted before {source} answered. "
+    "The result was not confirmed. Please check again."
+)
 
 
 def start_run(
@@ -71,7 +89,11 @@ def finish_run(
     Answers for sources that are not part of the run are ignored; sources without an
     answer make the run incomplete. A run that is already finished is not changed.
     """
+    # Read the status again and lock the row: the run may have been closed as
+    # interrupted (close_stale_runs) while its sources were being asked.
+    db.refresh(run, with_for_update=True)
     if run.status != RUNNING:
+        db.rollback()
         raise ValueError(f"Check run {run.id} is already {run.status}.")
     wanted = set(run.sources)
     kept = [result for result in results if result.source in wanted]
@@ -96,3 +118,77 @@ def finish_run(
         db.rollback()
         raise
     return run
+
+
+def stale_after() -> timedelta:
+    """CHECK_RUN_STALE_SECONDS, or 120 s."""
+    raw = os.environ.get("CHECK_RUN_STALE_SECONDS", "")
+    try:
+        seconds = float(raw) if raw.strip() else DEFAULT_STALE_SECONDS
+    except ValueError:
+        seconds = DEFAULT_STALE_SECONDS
+    return timedelta(seconds=max(seconds, 1))
+
+
+def is_stale(run: CheckRun, *, now: datetime | None = None) -> bool:
+    current = now or datetime.now(UTC)
+    return run.status == RUNNING and run.started_at < current - stale_after()
+
+
+def _close_interrupted(db: Session, run: CheckRun, now: datetime) -> None:
+    for source in run.sources:
+        db.add(
+            CheckResult(
+                partner_id=run.partner_id,
+                run_id=run.id,
+                source=source,
+                status=CheckStatus.ERROR.value,
+                checked_at=now,
+                raw_response={"error": "RUN_INTERRUPTED"},
+                explanation=INTERRUPTED.format(source=source),
+            )
+        )
+    run.status = INCOMPLETE
+    run.finished_at = now
+
+
+def close_stale_runs(db: Session, *, now: datetime | None = None) -> int:
+    """Close every interrupted run as incomplete. Returns how many were closed."""
+    current = now or datetime.now(UTC)
+    runs = db.scalars(
+        select(CheckRun)
+        .where(
+            CheckRun.status == RUNNING,
+            CheckRun.started_at < current - stale_after(),
+        )
+        # A worker finishing one of them at the same moment keeps its own result.
+        .with_for_update(skip_locked=True)
+    ).all()
+    for run in runs:
+        _close_interrupted(db, run, current)
+    db.commit()
+    if runs:
+        logger.warning("Closed %d interrupted check run(s) as incomplete", len(runs))
+    return len(runs)
+
+
+def close_if_stale(db: Session, run: CheckRun, *, now: datetime | None = None) -> None:
+    """Close this run as incomplete if it was interrupted (used when its status is read)."""
+    current = now or datetime.now(UTC)
+    if not is_stale(run, now=current):
+        return
+    db.refresh(run, with_for_update=True)
+    if is_stale(run, now=current):
+        _close_interrupted(db, run, current)
+    db.commit()
+
+
+def close_stale_runs_at_startup(session_factory) -> None:
+    """Called when the API or a worker starts. Never stops the start."""
+    if os.environ.get("CHECK_RUN_STARTUP_CLEANUP", "1") == "0":
+        return
+    try:
+        with session_factory() as db:
+            close_stale_runs(db)
+    except Exception:
+        logger.exception("Could not close interrupted check runs at startup")
