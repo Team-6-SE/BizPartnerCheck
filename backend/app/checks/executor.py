@@ -5,8 +5,8 @@ time and stores all answers with finish_run(). A source that has not answered wh
 run's time limit is over gets an ERROR result ("did not answer in time"), so a run is
 always complete or incomplete after at most CHECK_RUN_DEADLINE_SECONDS (default 30).
 
-For now the web app starts it as a FastAPI background task; the Celery worker (T5.1.2)
-will call the same function.
+The Celery worker (app/checks/tasks.py) calls it for runs from the queue; without a
+queue the API calls it itself after the response (app/checks/queue.py).
 """
 
 import logging
@@ -20,7 +20,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.adapters import hfu, vies
+from app.adapters import bmf, hfu, vies
 from app.adapters.base import (
     NO_ANSWER_IN_TIME,
     CheckStatus,
@@ -47,6 +47,24 @@ def run_deadline() -> float:
         return float(os.environ.get("CHECK_RUN_DEADLINE_SECONDS", ""))
     except ValueError:
         return DEFAULT_DEADLINE_SECONDS
+
+
+def default_adapters(sessions: SessionFactory) -> dict[str, SourceAdapter]:
+    """The adapter of every source, as the worker builds them (no FastAPI request).
+
+    The settings are the same as in the API (VIES_ADAPTER=fake-..., HFU_BASE_URL, ...).
+    """
+    # Imported here: the adapter modules import FastAPI dependencies.
+    from app.adapters.bmf import BmfAdapter
+    from app.adapters.fake import with_fake_from_env
+    from app.adapters.hfu import get_hfu_adapter
+    from app.adapters.vies import get_vies_adapter
+
+    return {
+        vies.SOURCE: get_vies_adapter(),
+        bmf.SOURCE: with_fake_from_env(BmfAdapter(sessions)),
+        hfu.SOURCE: get_hfu_adapter(),
+    }
 
 
 def get_session_factory() -> SessionFactory:

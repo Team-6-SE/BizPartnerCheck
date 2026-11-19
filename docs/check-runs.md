@@ -60,15 +60,38 @@ order of `sources`; a source without a result is still waiting. Each result is t
 | File | What |
 |---|---|
 | `backend/app/checks/runs.py` | `start_run`, `finish_run`, `final_status` |
-| `backend/app/checks/executor.py` | `execute_run`: asks all sources in parallel with the time limit |
+| `backend/app/checks/executor.py` | `execute_run`: asks all sources in parallel with the time limit; `default_adapters` for the worker |
 | `backend/app/checks/router.py` | The two endpoints |
 
 **Adding a source** (e.g. Firmenbuch, GISA): add its adapter to `get_run_adapters` and its
 name to `RUN_SOURCES` in `app/checks/router.py`.
 
+## Queue and worker (T5.1.2)
+
+| `CELERY_BROKER_URL` | Who executes a run |
+|---|---|
+| set (e.g. `redis://localhost:6379/0`) | The API puts the run ID into the Redis queue; a **Celery worker** asks the sources. More workers share the runs. |
+| not set | The API itself, right after the response (FastAPI background task). No Redis needed: fine for development and tests. |
+
+Both call the same `execute_run`, so results are the same.
+
+- Start a worker locally: `uv run celery -A app.worker worker --loglevel=info --pool=threads --concurrency=4`
+  (`--pool=threads` because Celery's default pool does not run on Windows).
+- If Redis cannot be reached when a run starts, the API answers `503 check_queue_unavailable` and
+  closes the run as `incomplete`.
+- A run is acknowledged in the queue only when it is finished: if a worker dies, another one takes
+  it again. Runs that are no longer `running` are skipped.
+- Staging (`infra/compose.deploy.yml`): `redis` and `worker` services; more workers with
+  `docker compose up -d --scale worker=2`.
+
+| File | What |
+|---|---|
+| `backend/app/worker.py` | Celery app and its settings |
+| `backend/app/checks/tasks.py` | Task `checks.run_check` |
+| `backend/app/checks/queue.py` | Queue or API process, depending on `CELERY_BROKER_URL` |
+
 ## Not done yet
 
-- **Queue and worker (T5.1.2):** for now the run is executed as a FastAPI background task in
-  the API process. The Celery worker will call the same `execute_run`.
-- **Crash safety (T5.1.5):** runs left `running` after a crash are not yet marked incomplete.
-- **Progress UI (T5.1.4):** the web app still uses the single-source endpoints.
+- **Crash safety (T5.1.5):** runs left `running` when the API process or a worker stops without
+  finishing are not yet marked incomplete.
+- **Performance test (T5.1.6).**

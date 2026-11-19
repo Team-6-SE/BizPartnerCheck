@@ -3,11 +3,13 @@
     POST /api/v1/partners/{partner_id}/runs   start a run -> 202 with the run
     GET  /api/v1/runs/{run_id}                status and the results so far
 
-The start returns at once; the sources are asked after the response (for now as a
-FastAPI background task, later by the Celery worker). Clients poll GET until the
-status is "complete" or "incomplete". Runs of other organisations give 404.
+The start returns at once; the sources are asked after the response, by the Celery
+worker when CELERY_BROKER_URL is set, else in the API process (app/checks/queue.py).
+Clients poll GET until the status is "complete" or "incomplete". Runs of other
+organisations give 404.
 """
 
+import logging
 import uuid
 from datetime import datetime
 from typing import Annotated
@@ -24,19 +26,23 @@ from app.adapters.fake import with_fake_from_env
 from app.adapters.hfu import get_hfu_adapter
 from app.adapters.vies import get_vies_adapter
 from app.auth import AuthenticatedUser
-from app.checks.executor import SessionFactory, execute_run, get_session_factory
-from app.checks.runs import start_run
+from app.checks.executor import SessionFactory, get_session_factory
+from app.checks.queue import RunDispatcher, get_run_dispatcher
+from app.checks.runs import finish_run, start_run
 from app.db.models import CheckResult, CheckRun, Partner
 from app.db.session import get_db
 from app.errors import api_error
 from app.partners.router import CheckRead
 from app.tenancy import get_current_organization_id
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(tags=["check runs"])
 
 DbSession = Annotated[Session, Depends(get_db)]
 OrganizationId = Annotated[uuid.UUID, Depends(get_current_organization_id)]
 Sessions = Annotated[SessionFactory, Depends(get_session_factory)]
+Dispatcher = Annotated[RunDispatcher, Depends(get_run_dispatcher)]
 
 # The sources of every run, in the order the screen shows them.
 RUN_SOURCES = (vies.SOURCE, bmf.SOURCE, hfu.SOURCE)
@@ -95,6 +101,7 @@ Adapters = Annotated[dict[str, SourceAdapter], Depends(get_run_adapters)]
     responses={
         404: {"description": "Partner not found"},
         409: {"description": "Partner is archived"},
+        503: {"description": "The check queue is not reachable"},
     },
 )
 def start_check_run(
@@ -105,6 +112,7 @@ def start_check_run(
     user: AuthenticatedUser,
     adapters: Adapters,
     sessions: Sessions,
+    dispatch: Dispatcher,
 ) -> RunRead:
     """Start all checks of a partner at once and return the run immediately (202).
 
@@ -137,7 +145,17 @@ def start_check_run(
         started_by=user.id,
     )
     db.commit()
-    background.add_task(execute_run, run.id, adapters, sessions)
+    try:
+        dispatch(run.id, background, adapters, sessions)
+    except Exception:
+        # E.g. Redis is down: the run can never finish, so close it as incomplete.
+        logger.exception("check run %s could not be queued", run.id)
+        finish_run(db, run, [])
+        raise api_error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "check_queue_unavailable",
+            "Checks cannot start right now. Please try again in a moment.",
+        ) from None
     return RunRead.from_run(run, [])
 
 

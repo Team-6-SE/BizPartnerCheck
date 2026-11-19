@@ -33,11 +33,35 @@ services:
       # Only Caddy reaches the backend: trust its X-Forwarded-For, so the registration
       # rate limit sees the visitor's address and not Caddy's.
       FORWARDED_ALLOW_IPS: "*"
+      # Check runs go into the Redis queue; the worker below executes them (S5.1).
+      CELERY_BROKER_URL: redis://redis:6379/0
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_started
     expose:
       - "8000"
+
+  # Executes check runs from the queue (S5.1). Same image as the backend; more workers:
+  # docker compose up -d --scale worker=2
+  worker:
+    image: ghcr.io/team-6-se/bizpartnercheck-backend:staging
+    restart: unless-stopped
+    command: ["uv", "run", "--no-sync", "celery", "-A", "app.worker", "worker", "--loglevel=info", "--concurrency=4"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+      CELERY_BROKER_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  # Queue for check runs. No port to the outside; only backend and worker use it.
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
 
   frontend:
     image: ghcr.io/team-6-se/bizpartnercheck-frontend:staging

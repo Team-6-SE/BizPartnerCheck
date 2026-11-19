@@ -17,6 +17,7 @@ from app.adapters.hfu import HfuAdapter, get_hfu_adapter
 from app.adapters.vies import ViesAdapter, get_vies_adapter
 from app.auth import TokenVerifier, get_token_verifier
 from app.checks.executor import get_session_factory
+from app.checks.queue import get_run_dispatcher, run_in_background
 from app.db.models import (
     BmfImport,
     BmfListEntry,
@@ -256,6 +257,8 @@ def anonymous_client(
     app.dependency_overrides[get_db] = lambda: db
     # Check runs go on after the response; in tests they use the same session.
     app.dependency_overrides[get_session_factory] = lambda: lambda: nullcontext(db)
+    # No Redis in tests: runs are executed by the API itself, right after the response.
+    app.dependency_overrides[get_run_dispatcher] = lambda: run_in_background
     # Tests never call the real VIES, the real ÖGK service or the real Keycloak.
     app.dependency_overrides[get_vies_adapter] = lambda: fake_vies
     app.dependency_overrides[get_hfu_adapter] = lambda: fake_hfu
