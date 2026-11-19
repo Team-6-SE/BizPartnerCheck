@@ -20,7 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.adapters import bmf, hfu, vies
-from app.adapters.base import SourceAdapter
+from app.adapters.base import CheckStatus, SourceAdapter
 from app.adapters.bmf import BmfAdapter
 from app.adapters.fake import with_fake_from_env
 from app.adapters.hfu import get_hfu_adapter
@@ -28,7 +28,7 @@ from app.adapters.vies import get_vies_adapter
 from app.auth import AuthenticatedUser
 from app.checks.executor import SessionFactory, get_session_factory
 from app.checks.queue import RunDispatcher, get_run_dispatcher
-from app.checks.runs import close_if_stale, finish_run, start_run
+from app.checks.runs import RUNNING, close_if_stale, finish_run, start_run
 from app.db.models import CheckResult, CheckRun, Partner
 from app.db.session import get_db
 from app.errors import api_error
@@ -48,6 +48,14 @@ Dispatcher = Annotated[RunDispatcher, Depends(get_run_dispatcher)]
 RUN_SOURCES = (vies.SOURCE, bmf.SOURCE, hfu.SOURCE)
 
 
+class RunChange(BaseModel):
+    """A source whose status differs from the previous finished run (S5.3)."""
+
+    source: str
+    previous_status: CheckStatus
+    status: CheckStatus
+
+
 class RunRead(BaseModel):
     id: uuid.UUID
     partner_id: uuid.UUID
@@ -58,9 +66,18 @@ class RunRead(BaseModel):
     started_at: datetime
     finished_at: datetime | None
     results: list[CheckRead]
+    # The partner's previous finished run, if there is one (S5.3, re-run).
+    previous_run_id: uuid.UUID | None = None
+    # Sources whose status changed since that run; empty while running.
+    changes: list[RunChange] = []
 
     @classmethod
-    def from_run(cls, run: CheckRun, results: list[CheckResult]) -> "RunRead":
+    def from_run(
+        cls,
+        run: CheckRun,
+        results: list[CheckResult],
+        previous: tuple[CheckRun, list[CheckResult]] | None = None,
+    ) -> "RunRead":
         order = {source: index for index, source in enumerate(run.sources)}
         ordered = sorted(results, key=lambda r: order.get(r.source, len(order)))
         return cls(
@@ -71,7 +88,47 @@ class RunRead(BaseModel):
             started_at=run.started_at,
             finished_at=run.finished_at,
             results=[CheckRead.from_result(r) for r in ordered],
+            previous_run_id=previous[0].id if previous else None,
+            changes=_changes(results, previous[1]) if previous else [],
         )
+
+
+def _changes(
+    results: list[CheckResult], previous: list[CheckResult]
+) -> list[RunChange]:
+    """Sources answered in both runs whose status is not the same."""
+    before = {result.source: result.status for result in previous}
+    return [
+        RunChange(
+            source=result.source,
+            previous_status=CheckStatus(before[result.source]),
+            status=CheckStatus(result.status),
+        )
+        for result in results
+        if result.source in before and before[result.source] != result.status
+    ]
+
+
+def _results(db: Session, run: CheckRun) -> list[CheckResult]:
+    return list(db.scalars(select(CheckResult).where(CheckResult.run_id == run.id)))
+
+
+def _previous_run(
+    db: Session, run: CheckRun
+) -> tuple[CheckRun, list[CheckResult]] | None:
+    """The partner's last finished run before this one, with its results."""
+    previous = db.scalar(
+        select(CheckRun)
+        .where(
+            CheckRun.partner_id == run.partner_id,
+            CheckRun.id != run.id,
+            CheckRun.status != RUNNING,
+            CheckRun.started_at < run.started_at,
+        )
+        .order_by(CheckRun.started_at.desc())
+        .limit(1)
+    )
+    return (previous, _results(db, previous)) if previous else None
 
 
 def get_run_adapters(
@@ -179,5 +236,6 @@ def get_check_run(
         )
     # A run interrupted by a crash would otherwise stay "running" forever (T5.1.5).
     close_if_stale(db, run)
-    results = list(db.scalars(select(CheckResult).where(CheckResult.run_id == run.id)))
-    return RunRead.from_run(run, results)
+    if run.status == RUNNING:
+        return RunRead.from_run(run, _results(db, run))
+    return RunRead.from_run(run, _results(db, run), _previous_run(db, run))

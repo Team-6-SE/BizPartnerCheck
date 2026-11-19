@@ -1,13 +1,17 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router'
+import { SearchCheckIcon } from 'lucide-react'
 
+import { startCheckRun, waitForCheckRun, waitingSources, type RunChange } from '@/api/check-runs'
 import { ApiError, getPartner, listPartnerChecks, type CheckResult, type Partner } from '@/api/partners'
+import { ChangedSince, RunChangesSummary } from '@/components/check-changes'
 import { CheckResultView } from '@/components/check-result'
 import { PageHeader } from '@/components/page-header'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Spinner } from '@/components/ui/spinner'
 import { sourceName } from '@/lib/check-results'
 
 const dateFormat = new Intl.DateTimeFormat(undefined, {
@@ -23,6 +27,13 @@ export function PartnerDetailPage() {
   const [checks, setChecks] = useState<CheckResult[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+
+  // Re-run (S5.3): sources still being asked, what changed since the previous run
+  // (null until a run finished, or if there was no previous run), and run errors.
+  const [checking, setChecking] = useState(false)
+  const [waiting, setWaiting] = useState<string[]>([])
+  const [changes, setChanges] = useState<RunChange[] | null>(null)
+  const [checkError, setCheckError] = useState('')
 
   useEffect(() => {
     if (!partnerId) {
@@ -60,6 +71,36 @@ export function PartnerDetailPage() {
       cancelled = true
     }
   }, [partnerId])
+
+  async function handleCheck(current: Partner) {
+    if (checking) return
+    setChecking(true)
+    setChanges(null)
+    setCheckError('')
+    try {
+      // A re-run is a new run: earlier results stay unchanged in the history below.
+      const started = await startCheckRun(current.id)
+      setWaiting(waitingSources(started))
+      const run = await waitForCheckRun(started, {
+        onProgress: (progress) => setWaiting(progress.status === 'running' ? waitingSources(progress) : []),
+      })
+      if (run.status === 'running') {
+        setCheckError('The check is taking longer than expected. Reload the page in a moment to see the results.')
+      } else if (run.previous_run_id) {
+        setChanges(run.changes)
+      }
+      const [partnerResult, checkResults] = await Promise.all([getPartner(current.id), listPartnerChecks(current.id)])
+      setPartner(partnerResult)
+      setChecks(checkResults)
+    } catch (err) {
+      setCheckError(
+        `The check could not start: ${err instanceof ApiError ? err.message : 'Something went wrong. Please try again.'}`,
+      )
+    } finally {
+      setWaiting([])
+      setChecking(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -140,13 +181,32 @@ export function PartnerDetailPage() {
             <h2>Latest results</h2>
           </CardTitle>
           <CardDescription>The most recent result of every source.</CardDescription>
+          {!partner.is_archived && (
+            <CardAction>
+              <Button variant="outline" size="sm" disabled={checking} onClick={() => handleCheck(partner)}>
+                {checking ? <Spinner data-icon="inline-start" /> : <SearchCheckIcon data-icon="inline-start" />}
+                {checking ? 'Checking…' : partner.latest_vies_check || partner.latest_bmf_check || partner.latest_hfu_check ? 'Check again' : 'Check'}
+              </Button>
+            </CardAction>
+          )}
         </CardHeader>
+
+        {(changes || checkError) && (
+          <CardContent className="pb-0" role="status" aria-live="polite">
+            {checkError ? <p className="text-sm text-destructive">{checkError}</p> : changes && <RunChangesSummary changes={changes} />}
+          </CardContent>
+        )}
 
         <CardContent className="grid gap-6 sm:grid-cols-2">
           <section aria-label="VIES" className="flex flex-col gap-2">
             <h3 className="text-sm font-medium">VIES (EU VAT number)</h3>
-            {partner.latest_vies_check ? (
-              <CheckResultView check={partner.latest_vies_check} showDetails />
+            {waiting.includes('VIES') ? (
+              <Checking />
+            ) : partner.latest_vies_check ? (
+              <>
+                <CheckResultView check={partner.latest_vies_check} showDetails />
+                <ChangedSince changes={changes ?? []} source="VIES" />
+              </>
             ) : (
               <p className="text-sm text-muted-foreground">
                 {partner.vat_number ? 'Not checked yet.' : 'No VAT number, VIES does not apply.'}
@@ -155,16 +215,26 @@ export function PartnerDetailPage() {
           </section>
           <section aria-label="BMF list" className="flex flex-col gap-2">
             <h3 className="text-sm font-medium">BMF list of fake companies</h3>
-            {partner.latest_bmf_check ? (
-              <CheckResultView check={partner.latest_bmf_check} />
+            {waiting.includes('BMF') ? (
+              <Checking />
+            ) : partner.latest_bmf_check ? (
+              <>
+                <CheckResultView check={partner.latest_bmf_check} />
+                <ChangedSince changes={changes ?? []} source="BMF" />
+              </>
             ) : (
               <p className="text-sm text-muted-foreground">Not checked yet.</p>
             )}
           </section>
           <section aria-label="HFU list" className="flex flex-col gap-2">
             <h3 className="text-sm font-medium">ÖGK HFU list (contractor liability)</h3>
-            {partner.latest_hfu_check ? (
-              <CheckResultView check={partner.latest_hfu_check} />
+            {waiting.includes('HFU') ? (
+              <Checking />
+            ) : partner.latest_hfu_check ? (
+              <>
+                <CheckResultView check={partner.latest_hfu_check} />
+                <ChangedSince changes={changes ?? []} source="HFU" />
+              </>
             ) : (
               <p className="text-sm text-muted-foreground">
                 {partner.vat_number ? 'Not checked yet.' : 'No VAT number, HFU does not apply.'}
@@ -200,6 +270,15 @@ export function PartnerDetailPage() {
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+function Checking() {
+  return (
+    <span className="flex items-center gap-2 text-sm text-muted-foreground">
+      <Spinner />
+      Checking…
+    </span>
   )
 }
 

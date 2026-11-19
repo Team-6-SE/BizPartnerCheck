@@ -105,6 +105,32 @@ A worker that answers after its run was closed does not overwrite it (`finish_ru
 run with a row lock). The 120 s leave room for runs that wait in the queue while all workers are
 busy; every run itself finishes within `CHECK_RUN_DEADLINE_SECONDS` (30).
 
+## Re-run and changes (S5.3)
+
+"Check again" starts a new run; earlier runs and their results are never changed. When a finished
+run is read, the API compares it with the partner's previous finished run:
+
+```json
+"previous_run_id": "1b2c…",
+"changes": [{"source": "VIES", "previous_status": "OK", "status": "FINDING"}]
+```
+
+`changes` lists the sources whose status is different (only sources that answered in both runs).
+`previous_run_id` is `null` for the first run and while a run is still running. The web app shows
+the changes in the partner list ("Changed since the last check: Valid → Invalid") and on the
+partner page, which also has its own "Check again" button.
+
+## Performance (T5.1.6)
+
+`tests/test_check_run_performance.py` starts 20 runs at once with 4 parallel workers and stub
+sources that answer after 2 s; 95 % must be finished within 15 s (expected: about 10 s). It is slow
+and writes to the database, so it only runs on request:
+
+```powershell
+$env:RUN_PERFORMANCE_TESTS="1"; uv run pytest tests/test_check_run_performance.py -s
+```
+
 ## Not done yet
 
-- **Performance test (T5.1.6).**
+- A "Check again" button on the result screen (`/checks/...`) follows with S6.2 (history and
+  detail view); today it is in the partner list and on the partner page.

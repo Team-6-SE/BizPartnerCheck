@@ -13,7 +13,14 @@ import {
   updatePartner,
   type Partner,
 } from '@/api/partners'
-import { startCheckRun, waitForCheckRun, waitingSources as sourcesWaiting, type CheckRun } from '@/api/check-runs'
+import {
+  startCheckRun,
+  waitForCheckRun,
+  waitingSources as sourcesWaiting,
+  type CheckRun,
+  type RunChange,
+} from '@/api/check-runs'
+import { ChangedSince } from '@/components/check-changes'
 import { CheckResultView } from '@/components/check-result'
 import { PageHeader } from '@/components/page-header'
 import { BMF_LABELS, HFU_LABELS, VIES_LABELS, labelsFor, sourceName } from '@/lib/check-results'
@@ -98,6 +105,8 @@ export function PartnersPage() {
   // and runs that could not start or did not finish.
   const [checkingIds, setCheckingIds] = useState<ReadonlySet<string>>(new Set())
   const [waitingSources, setWaitingSources] = useState<Record<string, string[]>>({})
+  // Sources whose status changed in the partner's last run (S5.3), per partner.
+  const [changes, setChanges] = useState<Record<string, RunChange[]>>({})
   const [checkErrors, setCheckErrors] = useState<Record<string, string[]>>({})
   const [freshCheckIds, setFreshCheckIds] = useState<ReadonlySet<string>>(new Set())
   const checkingRef = useRef(new Set<string>())
@@ -250,6 +259,7 @@ export function PartnersPage() {
     checkingRef.current.add(partner.id)
     setCheckingIds(new Set(checkingRef.current))
     setCheckErrors(({ [partner.id]: _old, ...rest }) => rest)
+    setChanges(({ [partner.id]: _old, ...rest }) => rest)
     const label = partnerLabel(partner)
     setAnnouncement(`Checking ${label} in VIES, the BMF list and the HFU list…`)
 
@@ -277,6 +287,10 @@ export function PartnersPage() {
       const said = run.results.map(
         (result) => `${sourceName(result.source)}: ${labelsFor(result.source)[result.status]}.`,
       )
+      if (run.changes.length) {
+        setChanges((current) => ({ ...current, [partner.id]: run.changes }))
+        said.push(`Changed since the last check: ${run.changes.map((c) => sourceName(c.source)).join(', ')}.`)
+      }
       if (run.status === 'running') {
         const message = 'The check is taking longer than expected. Reload the page in a moment to see the results.'
         setCheckErrors((current) => ({ ...current, [partner.id]: [message] }))
@@ -574,6 +588,7 @@ export function PartnersPage() {
                     const errors = checkErrors[partner.id]
                     const checking = checkingIds.has(partner.id)
                     const waiting = waitingSources[partner.id] ?? []
+                    const changed = changes[partner.id] ?? []
                     const viesCompanyName = check?.status === 'OK' ? check.company_name : null
                     const viesAddress = check?.status === 'OK' ? check.address : null
 
@@ -682,11 +697,14 @@ export function PartnersPage() {
                           {waiting.includes('VIES') ? (
                             <WaitingForSource />
                           ) : check ? (
-                            <CheckResultView
-                              check={check}
-                              labels={VIES_LABELS}
-                              fresh={freshCheckIds.has(check.id)}
-                            />
+                            <>
+                              <CheckResultView
+                                check={check}
+                                labels={VIES_LABELS}
+                                fresh={freshCheckIds.has(check.id)}
+                              />
+                              <ChangedSince changes={changed} source="VIES" />
+                            </>
                           ) : partner.vat_number ? (
                             <span className="text-muted-foreground">Not checked yet</span>
                           ) : (
@@ -702,11 +720,14 @@ export function PartnersPage() {
                           {waiting.includes('BMF') ? (
                             <WaitingForSource />
                           ) : bmfCheck ? (
-                            <CheckResultView
-                              check={bmfCheck}
-                              labels={BMF_LABELS}
-                              fresh={freshCheckIds.has(bmfCheck.id)}
-                            />
+                            <>
+                              <CheckResultView
+                                check={bmfCheck}
+                                labels={BMF_LABELS}
+                                fresh={freshCheckIds.has(bmfCheck.id)}
+                              />
+                              <ChangedSince changes={changed} source="BMF" />
+                            </>
                           ) : (
                             <span className="text-muted-foreground">Not checked yet</span>
                           )}
@@ -715,11 +736,14 @@ export function PartnersPage() {
                           {waiting.includes('HFU') ? (
                             <WaitingForSource />
                           ) : hfuCheck ? (
-                            <CheckResultView
-                              check={hfuCheck}
-                              labels={HFU_LABELS}
-                              fresh={freshCheckIds.has(hfuCheck.id)}
-                            />
+                            <>
+                              <CheckResultView
+                                check={hfuCheck}
+                                labels={HFU_LABELS}
+                                fresh={freshCheckIds.has(hfuCheck.id)}
+                              />
+                              <ChangedSince changes={changed} source="HFU" />
+                            </>
                           ) : partner.vat_number ? (
                             <span className="text-muted-foreground">Not checked yet</span>
                           ) : (

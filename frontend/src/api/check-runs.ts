@@ -1,8 +1,15 @@
 import { request } from './client'
-import type { CheckResult } from './partners'
+import type { CheckResult, CheckStatus } from './partners'
 
 /** running -> complete (every source answered) or incomplete (a source failed or was too late). */
 export type CheckRunStatus = 'running' | 'complete' | 'incomplete'
+
+/** A source whose status is not the same as in the partner's previous run (S5.3). */
+export type RunChange = {
+  source: string
+  previous_status: CheckStatus
+  status: CheckStatus
+}
 
 /** One click on "Check": all sources asked for one partner (backend docs/check-runs.md). */
 export type CheckRun = {
@@ -14,6 +21,10 @@ export type CheckRun = {
   started_at: string
   finished_at: string | null
   results: CheckResult[]
+  /** The partner's previous finished run; null for the first run (and while running). */
+  previous_run_id: string | null
+  /** Sources whose status changed since that run; empty while running. */
+  changes: RunChange[]
 }
 
 /** Start all checks of a partner. The backend answers at once (202); poll for the results. */

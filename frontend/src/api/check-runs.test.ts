@@ -29,6 +29,8 @@ function run(status: CheckRun['status'], sources: string[]): CheckRun {
     started_at: '2026-11-19T17:00:00Z',
     finished_at: status === 'running' ? null : '2026-11-19T17:00:05Z',
     results: sources.map(result),
+    previous_run_id: null,
+    changes: [],
   }
 }
 
