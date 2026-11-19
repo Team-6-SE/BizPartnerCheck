@@ -12,6 +12,7 @@ from app.adapters.fake import check_adapter_settings
 from app.auth import AuthenticatedUser, get_current_user
 from app.bmf.background import bmf_import_schedule
 from app.bmf.router import router as bmf_admin_router
+from app.checks.router import router as runs_router
 from app.errors import error_body
 from app.organization.router import router as organization_router
 from app.partners.router import router as partners_router
@@ -111,6 +112,7 @@ api.include_router(partners_router)
 api.include_router(organization_router)
 api.include_router(security_router)
 api.include_router(bmf_admin_router)
+api.include_router(runs_router)
 
 
 @api.get("/me", tags=["account"])

@@ -1,6 +1,7 @@
 import os
 import time
 from collections.abc import Iterator
+from contextlib import nullcontext
 from typing import Any
 
 import jwt
@@ -15,6 +16,7 @@ from app.adapters.base import CheckSubject
 from app.adapters.hfu import HfuAdapter, get_hfu_adapter
 from app.adapters.vies import ViesAdapter, get_vies_adapter
 from app.auth import TokenVerifier, get_token_verifier
+from app.checks.executor import get_session_factory
 from app.db.models import (
     BmfImport,
     BmfListEntry,
@@ -252,6 +254,8 @@ def anonymous_client(
 ) -> Iterator[TestClient]:
     """A client without sign-in token."""
     app.dependency_overrides[get_db] = lambda: db
+    # Check runs go on after the response; in tests they use the same session.
+    app.dependency_overrides[get_session_factory] = lambda: lambda: nullcontext(db)
     # Tests never call the real VIES, the real ÖGK service or the real Keycloak.
     app.dependency_overrides[get_vies_adapter] = lambda: fake_vies
     app.dependency_overrides[get_hfu_adapter] = lambda: fake_hfu
