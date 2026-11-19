@@ -190,7 +190,14 @@ export function PartnerDetailPage() {
             <CardAction>
               <Button variant="outline" size="sm" disabled={checking} onClick={() => handleCheck(partner)}>
                 {checking ? <Spinner data-icon="inline-start" /> : <SearchCheckIcon data-icon="inline-start" />}
-                {checking ? 'Checking…' : partner.latest_vies_check || partner.latest_bmf_check || partner.latest_hfu_check ? 'Check again' : 'Check'}
+                {checking
+                  ? 'Checking…'
+                  : partner.latest_vies_check ||
+                      partner.latest_bmf_check ||
+                      partner.latest_hfu_check ||
+                      partner.latest_firmenbuch_check
+                    ? 'Check again'
+                    : 'Check'}
               </Button>
             </CardAction>
           )}
@@ -243,6 +250,23 @@ export function PartnerDetailPage() {
             ) : (
               <p className="text-sm text-muted-foreground">
                 {partner.vat_number ? 'Not checked yet.' : 'No VAT number, HFU does not apply.'}
+              </p>
+            )}
+          </section>
+          <section aria-label="Firmenbuch" className="flex flex-col gap-2">
+            <h3 className="text-sm font-medium">Firmenbuch (company register)</h3>
+            {waiting.includes('FIRMENBUCH') ? (
+              <Checking />
+            ) : partner.latest_firmenbuch_check ? (
+              <>
+                <CheckResultView check={partner.latest_firmenbuch_check} showDetails />
+                <ChangedSince changes={changes ?? []} source="FIRMENBUCH" />
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                {partner.company_register_number
+                  ? 'Not checked yet.'
+                  : 'No company register number, the Firmenbuch does not apply.'}
               </p>
             )}
           </section>

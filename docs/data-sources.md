@@ -63,6 +63,7 @@ Company register, High Value Datasets (HVD) via JustizOnline. Free since January
 - Costs: HVD free; other products are priced under § 8 IWG. Manual extracts on JustizOnline cost EUR 4.89 to 8.20 each.
 - Test environment and limits: not documented, to ask BMJ support
 - To verify after approval: whether HVD includes managing directors and other officers
+- Implementation, settings and open points: [firmenbuch.md](firmenbuch.md)
 
 ## GISA
 
