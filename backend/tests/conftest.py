@@ -19,6 +19,7 @@ from app.db.models import (
     BmfImport,
     BmfListEntry,
     CheckResult,
+    CheckRun,
     Organization,
     Partner,
     SecurityEvent,
@@ -182,7 +183,13 @@ def database_ready() -> None:
             "`docker compose -f infra/docker-compose.yml up -d`.",
             returncode=1,
         )
-    needed = {"partners", "check_results", "security_events", "bmf_list_entries"}
+    needed = {
+        "partners",
+        "check_results",
+        "check_runs",
+        "security_events",
+        "bmf_list_entries",
+    }
     if not needed <= set(tables):
         pytest.exit(
             "The database tables are missing. Run `uv run alembic upgrade head` in `backend`.",
@@ -207,6 +214,7 @@ def db(database_ready: None) -> Iterator[Session]:
         expire_on_commit=False,
     )
     session.execute(delete(CheckResult))
+    session.execute(delete(CheckRun))
     session.execute(delete(Partner))
     session.execute(delete(BmfListEntry))
     session.execute(delete(BmfImport))
