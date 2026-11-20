@@ -10,10 +10,11 @@ from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.adapters import bmf, firmenbuch, hfu, vies
+from app.adapters import bmf, firmenbuch, gisa, hfu, vies
 from app.adapters.base import CheckStatus, CheckSubject, SourceAdapter
 from app.adapters.bmf import get_bmf_adapter
 from app.adapters.firmenbuch import get_firmenbuch_adapter
+from app.adapters.gisa import get_gisa_adapter
 from app.adapters.hfu import get_hfu_adapter
 from app.adapters.vies import get_vies_adapter
 from app.db.session import get_db
@@ -39,8 +40,9 @@ Vies = Annotated[SourceAdapter, Depends(get_vies_adapter)]
 Bmf = Annotated[SourceAdapter, Depends(get_bmf_adapter)]
 Hfu = Annotated[SourceAdapter, Depends(get_hfu_adapter)]
 Firmenbuch = Annotated[SourceAdapter, Depends(get_firmenbuch_adapter)]
+Gisa = Annotated[SourceAdapter, Depends(get_gisa_adapter)]
 # Sources whose latest result the partner list shows.
-LISTED_SOURCES = (vies.SOURCE, bmf.SOURCE, hfu.SOURCE, firmenbuch.SOURCE)
+LISTED_SOURCES = (vies.SOURCE, bmf.SOURCE, hfu.SOURCE, firmenbuch.SOURCE, gisa.SOURCE)
 
 UNIQUE_VAT_CONSTRAINT = "uq_partners_organization_vat"
 UNIQUE_REGISTER_CONSTRAINT = "uq_partners_organization_register"
@@ -132,6 +134,55 @@ class RegisterDetails(BaseModel):
         )
 
 
+class LicenceRead(BaseModel):
+    """One business licence from GISA (S4.6)."""
+
+    gisa_number: str | None
+    # The trade (Gewerbewortlaut), e.g. "Baumeister", and its key (Gewerbeschlüssel).
+    trade: str | None
+    trade_key: str | None = None
+    # active, suspended, ended or unknown
+    state: str
+    start: str | None = None
+    end: str | None = None
+    # Since when the licence is suspended (ruhend), if it is.
+    suspended_since: str | None = None
+    # The authority that issued it, e.g. "Magistrat der Stadt Krems".
+    authority: str | None = None
+    location: str | None = None
+    # The gewerberechtlicher Geschäftsführer: name and start date only.
+    manager_name: str | None = None
+    manager_since: str | None = None
+
+    @classmethod
+    def from_raw(cls, raw: dict) -> list["LicenceRead"] | None:
+        if not isinstance(raw.get("licences"), list):
+            return None  # an error: nothing to show
+        result = []
+        for licence in gisa.licences(raw):
+            manager = gisa.manager_of(licence, gisa.check_day(raw)) or {}
+            result.append(
+                cls(
+                    gisa_number=licence.get("gisaNumber"),
+                    trade=licence.get("trade"),
+                    trade_key=licence.get("tradeKey"),
+                    state=licence["state"],
+                    start=licence.get("start"),
+                    end=licence.get("end"),
+                    suspended_since=(
+                        licence.get("suspendedFrom")
+                        if licence["state"] == gisa.SUSPENDED
+                        else None
+                    ),
+                    authority=licence.get("authority"),
+                    location=licence.get("location"),
+                    manager_name=manager.get("name"),
+                    manager_since=manager.get("since"),
+                )
+            )
+        return result
+
+
 class CheckRead(BaseModel):
     id: uuid.UUID
     source: str
@@ -147,6 +198,8 @@ class CheckRead(BaseModel):
     consultation_number: str | None = None
     # Firmenbuch only: legal form, seat, status flags and persons.
     register_details: RegisterDetails | None = None
+    # GISA only: every licence with trade, number, status, dates and manager.
+    licences: list[LicenceRead] | None = None
 
     @classmethod
     def from_result(cls, result: CheckResult) -> "CheckRead":
@@ -181,6 +234,9 @@ class CheckRead(BaseModel):
             ),
             consultation_number=(vies.consultation_number(raw) if is_vies else None),
             register_details=(RegisterDetails.from_raw(raw) if is_register else None),
+            licences=(
+                LicenceRead.from_raw(raw) if result.source == gisa.SOURCE else None
+            ),
         )
 
 
@@ -198,6 +254,7 @@ class PartnerRead(BaseModel):
     latest_bmf_check: CheckRead | None = None
     latest_hfu_check: CheckRead | None = None
     latest_firmenbuch_check: CheckRead | None = None
+    latest_gisa_check: CheckRead | None = None
 
 
 class PartnerPage(BaseModel):
@@ -436,6 +493,7 @@ def _with_latest_checks(db: Session, partners: Sequence[Partner]) -> list[Partne
             latest_bmf_check=read(partner, bmf.SOURCE),
             latest_hfu_check=read(partner, hfu.SOURCE),
             latest_firmenbuch_check=read(partner, firmenbuch.SOURCE),
+            latest_gisa_check=read(partner, gisa.SOURCE),
         )
         for partner in partners
     ]
@@ -715,6 +773,37 @@ def run_firmenbuch_check(
     )
 
 
+@router.post(
+    "/{partner_id}/checks/gisa",
+    response_model=CheckRead,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        404: {"description": "Partner not found"},
+        409: {"description": "Partner has no company register number or is archived"},
+    },
+)
+def run_gisa_check(
+    partner_id: uuid.UUID,
+    db: DbSession,
+    organization_id: OrganizationId,
+    adapter: Gisa,
+) -> CheckRead:
+    """Ask GISA for the partner's business licences (searched by FN).
+
+    OK: at least one active licence (all licences are listed). FINDING: no active
+    licence, or no licence at all. REVIEW: the status of the licences is unclear.
+    ERROR: GISA could not be asked (also when the API key is not set on the server).
+    """
+    return _run_check(
+        db,
+        organization_id,
+        partner_id,
+        adapter,
+        needs_vat_number=False,
+        needs_register_number=True,
+    )
+
+
 def _company_name(db: Session, partner_id: uuid.UUID) -> str | None:
     """The registered name from the latest valid VIES check, if there is one."""
     result = db.scalar(
@@ -776,12 +865,12 @@ def _run_check(
             field="vat_number",
         )
     if partner.company_register_number is None and needs_register_number:
-        # E.g. a foreign partner: the Firmenbuch identifies companies by FN only.
+        # E.g. a foreign partner: the Firmenbuch and GISA are searched by FN.
+        name = "the Firmenbuch" if adapter.source == firmenbuch.SOURCE else "GISA"
         raise api_error(
             status.HTTP_409_CONFLICT,
             "no_register_number",
-            "This partner has no company register number, so the Firmenbuch "
-            "cannot check it.",
+            f"This partner has no company register number, so {name} cannot check it.",
             field="company_register_number",
         )
     requester_vat = db.scalar(

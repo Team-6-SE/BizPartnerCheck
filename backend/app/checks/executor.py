@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.adapters import bmf, firmenbuch, hfu, vies
+from app.adapters import bmf, firmenbuch, gisa, hfu, vies
 from app.adapters.base import (
     NO_ANSWER_IN_TIME,
     CheckStatus,
@@ -42,7 +42,7 @@ DEFAULT_DEADLINE_SECONDS = 30.0
 # Sources that identify the partner by its VAT number only.
 NEEDS_VAT_NUMBER = frozenset({vies.SOURCE, hfu.SOURCE})
 # Sources that identify the partner by its company register number (FN) only.
-NEEDS_REGISTER_NUMBER = frozenset({firmenbuch.SOURCE})
+NEEDS_REGISTER_NUMBER = frozenset({firmenbuch.SOURCE, gisa.SOURCE})
 # BMF also compares the company name, so it waits for the name VIES returns in the
 # same run (a new partner has no earlier VIES name).
 WAITS_FOR = {bmf.SOURCE: vies.SOURCE}
@@ -67,6 +67,7 @@ def default_adapters(sessions: SessionFactory) -> dict[str, SourceAdapter]:
     from app.adapters.bmf import BmfAdapter
     from app.adapters.fake import with_fake_from_env
     from app.adapters.firmenbuch import get_firmenbuch_adapter
+    from app.adapters.gisa import get_gisa_adapter
     from app.adapters.hfu import get_hfu_adapter
     from app.adapters.vies import get_vies_adapter
 
@@ -75,6 +76,7 @@ def default_adapters(sessions: SessionFactory) -> dict[str, SourceAdapter]:
         bmf.SOURCE: with_fake_from_env(BmfAdapter(sessions)),
         hfu.SOURCE: get_hfu_adapter(),
         firmenbuch.SOURCE: get_firmenbuch_adapter(),
+        gisa.SOURCE: get_gisa_adapter(),
     }
 
 

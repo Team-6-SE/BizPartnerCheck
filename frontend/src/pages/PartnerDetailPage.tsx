@@ -195,7 +195,8 @@ export function PartnerDetailPage() {
                   : partner.latest_vies_check ||
                       partner.latest_bmf_check ||
                       partner.latest_hfu_check ||
-                      partner.latest_firmenbuch_check
+                      partner.latest_firmenbuch_check ||
+                      partner.latest_gisa_check
                     ? 'Check again'
                     : 'Check'}
               </Button>
@@ -267,6 +268,23 @@ export function PartnerDetailPage() {
                 {partner.company_register_number
                   ? 'Not checked yet.'
                   : 'No company register number, the Firmenbuch does not apply.'}
+              </p>
+            )}
+          </section>
+          <section aria-label="GISA" className="flex flex-col gap-2 sm:col-span-2">
+            <h3 className="text-sm font-medium">GISA (business licences)</h3>
+            {waiting.includes('GISA') ? (
+              <Checking />
+            ) : partner.latest_gisa_check ? (
+              <>
+                <CheckResultView check={partner.latest_gisa_check} showDetails />
+                <ChangedSince changes={changes ?? []} source="GISA" />
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                {partner.company_register_number
+                  ? 'Not checked yet.'
+                  : 'No company register number, GISA does not apply.'}
               </p>
             )}
           </section>

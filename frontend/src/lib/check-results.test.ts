@@ -5,10 +5,12 @@ import type { CheckResult } from '@/api/partners'
 import {
   BMF_LABELS,
   FIRMENBUCH_LABELS,
+  GISA_LABELS,
   HFU_LABELS,
   VIES_LABELS,
   isStale,
   labelsFor,
+  licenceSummary,
   roleText,
   sourceName,
   statusLabel,
@@ -52,6 +54,7 @@ describe('sourceName', () => {
     expect(sourceName('BMF')).toBe('BMF list')
     expect(sourceName('hfu')).toBe('HFU list')
     expect(sourceName('FIRMENBUCH')).toBe('Firmenbuch')
+    expect(sourceName('GISA')).toBe('GISA')
     expect(sourceName('gisa')).toBe('GISA')
   })
 })
@@ -113,5 +116,41 @@ describe('Firmenbuch results', () => {
     expect(roleText('GESCHÄFTSFÜHRER/IN (handelsrechtlich)')).toBe('Geschäftsführer/in (handelsrechtlich)')
     expect(roleText('Prokurist')).toBe('Prokurist')
     expect(roleText(null)).toBe('Function')
+  })
+})
+
+describe('GISA results', () => {
+  const licence = {
+    gisa_number: '12345678',
+    trade: 'Baumeister',
+    trade_key: '100',
+    state: 'active' as const,
+    start: '2018-04-01',
+    end: null,
+    suspended_since: null,
+    authority: null,
+    location: null,
+    manager_name: 'Maria Muster',
+    manager_since: null,
+  }
+
+  it('uses the licence words', () => {
+    expect(labelsFor('GISA')).toBe(GISA_LABELS)
+    expect(statusLabel(check({ source: 'GISA', licences: [licence] }))).toBe('Active licence')
+  })
+
+  it('shows "no licence" differently from "no active licence" and from an error', () => {
+    const none = check({ source: 'GISA', status: 'FINDING', licences: [] })
+    const ended = check({ source: 'GISA', status: 'FINDING', licences: [{ ...licence, state: 'ended' }] })
+    const unavailable = check({ source: 'GISA', status: 'ERROR', licences: null })
+
+    expect(statusLabel(none)).toBe('No licence')
+    expect(statusLabel(ended)).toBe('No active licence')
+    expect(statusLabel(unavailable)).toBe('Error')
+  })
+
+  it('sums up the licences for the partner list', () => {
+    expect(licenceSummary([licence, { ...licence, state: 'ended' }])).toBe('2 licences, 1 active')
+    expect(licenceSummary([licence])).toBe('1 licence, 1 active')
   })
 })

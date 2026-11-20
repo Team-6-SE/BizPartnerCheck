@@ -77,6 +77,7 @@ Business licence register. Free public SOAP interface in two stages; we need sta
 - Test environment: none documented
 - Licence code table (Gewerbeschlüssel): open data as xlsx on data.gv.at
 - Support: support@gisa.gv.at (technical, weekdays 8:00–15:30); gewerbe@bmwet.gv.at (terms of use)
+- Implementation, settings and open points: [gisa.md](gisa.md)
 
 ## Access requests
 
