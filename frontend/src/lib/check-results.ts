@@ -1,5 +1,5 @@
 import type { RunChange } from '@/api/check-runs'
-import type { CheckResult, CheckStatus } from '@/api/partners'
+import type { CheckResult, CheckStatus, Licence } from '@/api/partners'
 
 /** Words and small rules for check results, shared by the partner list and the partner page. */
 
@@ -41,7 +41,16 @@ export const FIRMENBUCH_LABELS: Labels = {
   ERROR: 'Error',
 }
 
-type SourceKey = 'VIES' | 'BMF' | 'HFU' | 'FIRMENBUCH'
+// GISA business licences: OK means at least one active licence.
+export const GISA_LABELS: Labels = {
+  OK: 'Active licence',
+  FINDING: 'No active licence',
+  REVIEW: 'Please review',
+  NOT_APPLICABLE: 'Not applicable',
+  ERROR: 'Error',
+}
+
+type SourceKey = 'VIES' | 'BMF' | 'HFU' | 'FIRMENBUCH' | 'GISA'
 
 /** The backend names sources in capitals ("VIES", "BMF", "HFU", "FIRMENBUCH"); compare without case. */
 function isSource(source: string, name: SourceKey): boolean {
@@ -53,6 +62,7 @@ export function labelsFor(source: string): Labels {
   if (isSource(source, 'BMF')) return BMF_LABELS
   if (isSource(source, 'HFU')) return HFU_LABELS
   if (isSource(source, 'FIRMENBUCH')) return FIRMENBUCH_LABELS
+  if (isSource(source, 'GISA')) return GISA_LABELS
   return VIES_LABELS
 }
 
@@ -78,6 +88,8 @@ export function isStale(check: CheckResult): boolean {
  */
 export function statusLabel(check: CheckResult, labels: Labels = labelsFor(check.source)): string {
   if (check.status === 'FINDING' && check.register_details?.found === false) return 'Not in register'
+  // GISA: "no licence at all" is not the same as "only ended licences".
+  if (check.status === 'FINDING' && check.licences?.length === 0) return 'No licence'
   return labels[check.status]
 }
 
@@ -103,4 +115,18 @@ export function roleText(role: string | null): string {
   // Only words in capitals change: "GESCHÄFTSFÜHRER/IN (handelsrechtlich)" -> "Geschäftsführer/in (handelsrechtlich)".
   const lowered = role.replace(/\S+/g, (word) => (word.length > 1 && word === word.toUpperCase() ? word.toLowerCase() : word))
   return lowered === role ? role : sentenceCase(lowered)
+}
+
+/** "2 licences, 1 active" for the partner list. */
+export function licenceSummary(licences: Licence[]): string {
+  const active = licences.filter((licence) => licence.state === 'active').length
+  const total = `${licences.length} licence${licences.length === 1 ? '' : 's'}`
+  return `${total}, ${active} active`
+}
+
+export const LICENCE_STATE_LABELS: Record<Licence['state'], string> = {
+  active: 'Active',
+  suspended: 'Suspended (ruhend)',
+  ended: 'Ended',
+  unknown: 'Status unclear',
 }

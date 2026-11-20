@@ -11,11 +11,15 @@ x-backend-env: &backend-env
   BMF_ADAPTER: ${BMF_ADAPTER:-}
   HFU_ADAPTER: ${HFU_ADAPTER:-}
   FIRMENBUCH_ADAPTER: ${FIRMENBUCH_ADAPTER:-}
+  GISA_ADAPTER: ${GISA_ADAPTER:-}
   VIES_BASE_URL: ${VIES_BASE_URL:-}
   HFU_BASE_URL: ${HFU_BASE_URL:-}
   # Secret token from JustizOnline (docs/firmenbuch.md); empty = no Firmenbuch in runs.
   FIRMENBUCH_API_KEY: ${FIRMENBUCH_API_KEY:-}
   FIRMENBUCH_BASE_URL: ${FIRMENBUCH_BASE_URL:-}
+  # Personal key from gisa.gv.at (docs/gisa.md); empty = no GISA in runs.
+  GISA_API_KEY: ${GISA_API_KEY:-}
+  GISA_BASE_URL: ${GISA_BASE_URL:-}
   SOURCE_TIMEOUT_SECONDS: ${SOURCE_TIMEOUT_SECONDS:-8}
   SOURCE_MAX_RETRIES: ${SOURCE_MAX_RETRIES:-2}
   SOURCE_DEADLINE_SECONDS: ${SOURCE_DEADLINE_SECONDS:-30}

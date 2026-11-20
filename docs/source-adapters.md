@@ -30,7 +30,7 @@ requester: VIES consultation number, ÖGK HFU). Each source uses what it needs.
 
 | Field | Meaning |
 |---|---|
-| `source` | e.g. `VIES` ([vies.md](vies.md)), `BMF` ([bmf.md](bmf.md)), `HFU` ([hfu.md](hfu.md)), `FIRMENBUCH` ([firmenbuch.md](firmenbuch.md)) |
+| `source` | e.g. `VIES` ([vies.md](vies.md)), `BMF` ([bmf.md](bmf.md)), `HFU` ([hfu.md](hfu.md)), `FIRMENBUCH` ([firmenbuch.md](firmenbuch.md)), `GISA` ([gisa.md](gisa.md)) |
 | `status` | `OK`, `FINDING`, `REVIEW`, `NOT_APPLICABLE` or `ERROR` (below) |
 | `explanation` | the sentence from `describe` |
 | `retrieved_at` | when we asked |

@@ -8,5 +8,6 @@ describe('changeText', () => {
     expect(changeText({ source: 'BMF', previous_status: 'OK', status: 'FINDING' })).toBe('Not listed → Listed')
     expect(changeText({ source: 'HFU', previous_status: 'ERROR', status: 'OK' })).toBe('Error → Listed')
     expect(changeText({ source: 'FIRMENBUCH', previous_status: 'OK', status: 'FINDING' })).toBe('Registered → Flagged')
+    expect(changeText({ source: 'GISA', previous_status: 'OK', status: 'FINDING' })).toBe('Active licence → No active licence')
   })
 })

@@ -9,7 +9,7 @@ from sqlalchemy.exc import OperationalError
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.adapters import bmf, firmenbuch, hfu, vies
+from app.adapters import bmf, firmenbuch, gisa, hfu, vies
 from app.adapters.fake import check_adapter_settings
 from app.auth import AuthenticatedUser, get_current_user
 from app.bmf.background import bmf_import_schedule
@@ -27,7 +27,7 @@ from app.security.router import router as security_router
 logger = logging.getLogger(__name__)
 
 # Every external source; their {SOURCE}_ADAPTER settings are checked at startup.
-SOURCES = (vies.SOURCE, bmf.SOURCE, hfu.SOURCE, firmenbuch.SOURCE)
+SOURCES = (vies.SOURCE, bmf.SOURCE, hfu.SOURCE, firmenbuch.SOURCE, gisa.SOURCE)
 
 
 @contextlib.asynccontextmanager
@@ -38,6 +38,10 @@ async def lifespan(app_: FastAPI) -> AsyncIterator[None]:
         logger.warning(
             "Firmenbuch: FIRMENBUCH_API_KEY is not set, so check runs leave the "
             "Firmenbuch out (docs/firmenbuch.md)."
+        )
+    if not gisa.is_enabled():
+        logger.warning(
+            "GISA: GISA_API_KEY is not set, so check runs leave GISA out (docs/gisa.md)."
         )
     # Runs left "running" by a stopped process are closed as incomplete (T5.1.5).
     await run_in_threadpool(close_stale_runs_at_startup, SessionLocal)

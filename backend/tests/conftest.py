@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.adapters.base import CheckSubject, Scenario
 from app.adapters.firmenbuch import FirmenbuchAdapter, get_firmenbuch_adapter
+from app.adapters.gisa import GisaAdapter, get_gisa_adapter
 from app.adapters.hfu import HfuAdapter, get_hfu_adapter
 from app.adapters.vies import ViesAdapter, get_vies_adapter
 from app.auth import TokenVerifier, get_token_verifier
@@ -40,6 +41,8 @@ os.environ["CHECK_RUN_STARTUP_CLEANUP"] = "0"
 # Check runs ask the Firmenbuch only when it is set up; tests that need it say so.
 os.environ.pop("FIRMENBUCH_API_KEY", None)
 os.environ.pop("FIRMENBUCH_ADAPTER", None)
+os.environ.pop("GISA_API_KEY", None)
+os.environ.pop("GISA_ADAPTER", None)
 
 from app.main import app
 from app.security.keycloak import get_keycloak_client
@@ -118,6 +121,24 @@ class FakeFirmenbuch(FirmenbuchAdapter):
     """Stands in for the Firmenbuch in API tests: answer chosen by the test.
 
     The answer starts as the adapter's own sample of a registered, active company.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(api_key="test-key", sleep=lambda _seconds: None)
+        self.answer: dict[str, Any] = self.sample_answer(
+            Scenario.OK, CheckSubject(vat_number=None, register_number="123456a")
+        )
+        self.checked: list[str | None] = []
+
+    def query(self, subject: CheckSubject, timeout: float) -> dict[str, Any]:
+        self.checked.append(subject.register_number)
+        return self.answer
+
+
+class FakeGisa(GisaAdapter):
+    """Stands in for GISA in API tests: answer chosen by the test.
+
+    The answer starts as the adapter's own sample: one active licence, one suspended.
     """
 
     def __init__(self) -> None:
@@ -280,11 +301,17 @@ def fake_firmenbuch() -> FakeFirmenbuch:
 
 
 @pytest.fixture
+def fake_gisa() -> FakeGisa:
+    return FakeGisa()
+
+
+@pytest.fixture
 def anonymous_client(
     db: Session,
     fake_vies: FakeVies,
     fake_hfu: FakeHfu,
     fake_firmenbuch: FakeFirmenbuch,
+    fake_gisa: FakeGisa,
     tokens: TokenFactory,
 ) -> Iterator[TestClient]:
     """A client without sign-in token."""
@@ -302,10 +329,11 @@ def anonymous_client(
     app.dependency_overrides[get_session_factory] = lambda: one_at_a_time
     # No Redis in tests: runs are executed by the API itself, right after the response.
     app.dependency_overrides[get_run_dispatcher] = lambda: run_in_background
-    # Tests never call the real VIES, ÖGK service, Firmenbuch or Keycloak.
+    # Tests never call the real VIES, ÖGK service, Firmenbuch, GISA or Keycloak.
     app.dependency_overrides[get_vies_adapter] = lambda: fake_vies
     app.dependency_overrides[get_hfu_adapter] = lambda: fake_hfu
     app.dependency_overrides[get_firmenbuch_adapter] = lambda: fake_firmenbuch
+    app.dependency_overrides[get_gisa_adapter] = lambda: fake_gisa
     app.dependency_overrides[get_token_verifier] = tokens.verifier
     app.dependency_overrides[get_keycloak_client] = lambda: None
     try:

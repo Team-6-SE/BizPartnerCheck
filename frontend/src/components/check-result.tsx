@@ -1,10 +1,12 @@
 import { CircleCheckIcon, CircleXIcon, TriangleAlertIcon } from 'lucide-react'
 
-import type { CheckResult, CheckStatus, RegisterDetails } from '@/api/partners'
+import type { CheckResult, CheckStatus, Licence, RegisterDetails } from '@/api/partners'
 import { Badge } from '@/components/ui/badge'
 import {
   isStale,
+  LICENCE_STATE_LABELS,
   labelsFor,
+  licenceSummary,
   roleText,
   sentenceCase,
   statusLabel,
@@ -52,6 +54,10 @@ export function CheckResultView({
       {register && showDetails && register.found && (
         <RegisterDetailsView details={register} name={check.company_name} address={check.address} />
       )}
+      {check.licences && check.licences.length > 0 && !showDetails && (
+        <p className="text-xs text-muted-foreground">{licenceSummary(check.licences)}</p>
+      )}
+      {check.licences && check.licences.length > 0 && showDetails && <LicenceList licences={check.licences} />}
       {viesWithoutDetails(check) && (
         <p className="text-xs text-muted-foreground">Name and address are not shared by this country.</p>
       )}
@@ -203,5 +209,55 @@ function RegisterDetailsView({
         </div>
       )}
     </div>
+  )
+}
+
+const STATE_STYLES: Record<Licence['state'], string> = {
+  active: 'text-emerald-700 dark:text-emerald-400',
+  suspended: 'text-amber-700 dark:text-amber-400',
+  ended: 'text-muted-foreground',
+  unknown: 'text-amber-700 dark:text-amber-400',
+}
+
+/** Every GISA licence with trade, number, status, start date and the responsible person. */
+function LicenceList({ licences }: { licences: Licence[] }) {
+  return (
+    <ul aria-label="Business licences" className="flex w-full flex-col divide-y text-sm">
+      {licences.map((licence, index) => (
+        <li key={licence.gisa_number ?? index} className="flex flex-col gap-0.5 py-2 first:pt-1 last:pb-0">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+            <span className="font-medium">{licence.trade ?? 'Licence'}</span>
+            <span className={`text-xs font-medium ${STATE_STYLES[licence.state]}`}>
+              {LICENCE_STATE_LABELS[licence.state]}
+              {licence.state === 'ended' && licence.end && ` ${registerDay(licence.end)}`}
+              {licence.state === 'suspended' && licence.suspended_since && ` since ${registerDay(licence.suspended_since)}`}
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {licence.gisa_number && (
+              <>
+                GISA <span className="font-mono">{licence.gisa_number}</span>
+              </>
+            )}
+            {licence.start && <> · since {registerDay(licence.start)}</>}
+            {licence.authority && <> · {licence.authority}</>}
+          </p>
+          {licence.location && <p className="text-xs text-muted-foreground">{licence.location}</p>}
+          <p className="text-xs">
+            <span className="text-muted-foreground">Responsible person: </span>
+            {licence.manager_name ? (
+              <>
+                {licence.manager_name}
+                {licence.manager_since && (
+                  <span className="text-muted-foreground"> (since {registerDay(licence.manager_since)})</span>
+                )}
+              </>
+            ) : (
+              <span className="text-muted-foreground">none registered (the owner is responsible)</span>
+            )}
+          </p>
+        </li>
+      ))}
+    </ul>
   )
 }

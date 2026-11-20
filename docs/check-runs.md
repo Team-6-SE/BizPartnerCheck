@@ -48,9 +48,9 @@ order of `sources`; a source without a result is still waiting. Each result is t
 | `incomplete` | At least one source failed or did not answer in time (`ERROR`) |
 
 - Sources that need a VAT number (VIES, HFU) give `NOT_APPLICABLE` for partners without one, the Firmenbuch
-  for partners without a company register number.
-- The Firmenbuch is part of a run only when `FIRMENBUCH_API_KEY` (or a fake) is set: `run_sources()` in
-  `app/checks/router.py`, details in [firmenbuch.md](firmenbuch.md).
+  and GISA for partners without a company register number.
+- The Firmenbuch and GISA are part of a run only when their API key (or a fake) is set: `run_sources()` in
+  `app/checks/router.py`, details in [firmenbuch.md](firmenbuch.md) and [gisa.md](gisa.md).
 - A source that is still asking when the time limit is over (`CHECK_RUN_DEADLINE_SECONDS`,
   default 30) gets `ERROR` ("did not answer within 30 s"); the others are stored normally.
 - `ERROR` results are stored too, as evidence that the source could not be asked.
@@ -77,7 +77,7 @@ order of `sources`; a source without a result is still waiting. Each result is t
 | `backend/app/checks/executor.py` | `execute_run`: asks all sources in parallel with the time limit; `default_adapters` for the worker |
 | `backend/app/checks/router.py` | The two endpoints |
 
-**Adding a source** (e.g. GISA): add its adapter to `get_run_adapters` and its name to
+**Adding a source:** add its adapter to `get_run_adapters` and its name to
 `RUN_SOURCES` (or `run_sources()`) in `app/checks/router.py`, and to `default_adapters` in
 `app/checks/executor.py` for the worker.
 

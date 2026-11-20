@@ -19,11 +19,12 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.adapters import bmf, firmenbuch, hfu, vies
+from app.adapters import bmf, firmenbuch, gisa, hfu, vies
 from app.adapters.base import CheckStatus, SourceAdapter
 from app.adapters.bmf import BmfAdapter
 from app.adapters.fake import with_fake_from_env
 from app.adapters.firmenbuch import get_firmenbuch_adapter
+from app.adapters.gisa import get_gisa_adapter
 from app.adapters.hfu import get_hfu_adapter
 from app.adapters.vies import get_vies_adapter
 from app.auth import AuthenticatedUser
@@ -56,14 +57,15 @@ RUN_SOURCES = (vies.SOURCE, bmf.SOURCE, hfu.SOURCE)
 
 
 def run_sources() -> tuple[str, ...]:
-    """RUN_SOURCES, and the Firmenbuch once it is set up (API key or fake).
+    """RUN_SOURCES, and the Firmenbuch and GISA once they are set up (API key or fake).
 
-    Without the API key every Firmenbuch answer would be ERROR and every run
-    incomplete, so the Firmenbuch is left out until FIRMENBUCH_API_KEY is set.
+    Without an API key every answer of these sources would be ERROR and every run
+    incomplete, so they are left out until FIRMENBUCH_API_KEY / GISA_API_KEY is set.
     """
-    if firmenbuch.is_enabled():
-        return (*RUN_SOURCES, firmenbuch.SOURCE)
-    return RUN_SOURCES
+    optional = tuple(
+        module.SOURCE for module in (firmenbuch, gisa) if module.is_enabled()
+    )
+    return (*RUN_SOURCES, *optional)
 
 
 class RunChange(BaseModel):
@@ -169,6 +171,7 @@ def get_run_adapters(
     vies_adapter: Annotated[SourceAdapter, Depends(get_vies_adapter)],
     hfu_adapter: Annotated[SourceAdapter, Depends(get_hfu_adapter)],
     firmenbuch_adapter: Annotated[SourceAdapter, Depends(get_firmenbuch_adapter)],
+    gisa_adapter: Annotated[SourceAdapter, Depends(get_gisa_adapter)],
     sessions: Sessions,
 ) -> dict[str, SourceAdapter]:
     """FastAPI dependency: one adapter per source of a run.
@@ -181,6 +184,7 @@ def get_run_adapters(
         bmf.SOURCE: with_fake_from_env(BmfAdapter(sessions)),
         hfu.SOURCE: hfu_adapter,
         firmenbuch.SOURCE: firmenbuch_adapter,
+        gisa.SOURCE: gisa_adapter,
     }
 
 
@@ -210,8 +214,8 @@ def start_check_run(
     """Start all checks of a partner at once and return the run immediately (202).
 
     Poll GET /runs/{id} for progress. Sources that need a VAT number give
-    NOT_APPLICABLE for partners without one, the Firmenbuch for partners without a
-    company register number; a source that fails or is too late
+    NOT_APPLICABLE for partners without one, the Firmenbuch and GISA for partners
+    without a company register number; a source that fails or is too late
     gives ERROR and makes the run incomplete. While a run of the partner is still
     going on, the same run is returned instead of starting another one (so the
     sources are not flooded with requests).
