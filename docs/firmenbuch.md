@@ -101,8 +101,8 @@ The token comes from the JustizOnline profile ("Information Reuse") once the app
 
 - Local: `FIRMENBUCH_API_KEY=...` in your own `.env` (not in git: `.env` is in `.gitignore`).
 - Server: `FIRMENBUCH_API_KEY=...` in `deploy.env` only (backend and worker both get it via
-  `infra/compose.deploy.yml`); `deploy.env` stays on the server and never goes into Git
-  ([deployment.md](deployment.md)).
+  `infra/compose.deploy.yml`); `deploy.env` stays on the server and is in `.gitignore`, so it
+  never goes into Git ([deployment.md](deployment.md)).
 - Never in code, tests, issues, pull requests or the team chat. The key is only sent in the request header and
   never stored in a result.
 
