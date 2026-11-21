@@ -55,7 +55,8 @@ def test_the_task_executes_the_run_with_all_sources(
 
     ((called_id, adapters, sessions),) = calls
     assert called_id == run_id
-    assert set(adapters) == {"VIES", "BMF", "HFU"}
+    # Every source has an adapter; the run's own source list decides who is asked.
+    assert set(adapters) == {"VIES", "BMF", "HFU", "FIRMENBUCH", "GISA"}
     assert sessions is SessionLocal
 
 

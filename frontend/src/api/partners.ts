@@ -6,6 +6,56 @@ export { ApiError } from './client'
 /** The same statuses for every source (backend app/adapters/base.py). */
 export type CheckStatus = 'OK' | 'FINDING' | 'REVIEW' | 'NOT_APPLICABLE' | 'ERROR'
 
+/** A Firmenbuch entry that marks the company as not (fully) active (S4.5). */
+export type RegisterFlag = {
+  kind: 'deleted' | 'insolvency' | 'liquidation' | string
+  /** In words, e.g. "insolvency proceedings". */
+  label: string
+  /** The register's own text, e.g. "Konkurs eröffnet". */
+  text: string | null
+  date: string | null
+  /** Insolvency proceedings that are over (REVIEW, not FINDING). */
+  ended: boolean
+}
+
+/** Managing director, shareholder, ...: only name, role and start date (data minimisation). */
+export type RegisterPerson = {
+  name: string | null
+  role: string | null
+  since: string | null
+}
+
+/** What the Firmenbuch says about the company; only on Firmenbuch results. */
+export type RegisterDetails = {
+  /** False: the register has no company with this number. */
+  found: boolean
+  register_number: string | null
+  legal_form: string | null
+  seat: string | null
+  flags: RegisterFlag[]
+  persons: RegisterPerson[]
+}
+
+/** One business licence from GISA (S4.6). */
+export type Licence = {
+  gisa_number: string | null
+  /** The trade (Gewerbewortlaut), e.g. "Baumeister". */
+  trade: string | null
+  /** The Gewerbeschlüssel. */
+  trade_key: string | null
+  state: 'active' | 'suspended' | 'ended' | 'unknown'
+  start: string | null
+  end: string | null
+  /** Since when the licence is suspended (ruhend), if it is. */
+  suspended_since: string | null
+  /** The authority that issued it, e.g. "Magistrat der Stadt Krems". */
+  authority: string | null
+  location: string | null
+  /** The gewerberechtlicher Geschäftsführer: name and start date only. */
+  manager_name: string | null
+  manager_since: string | null
+}
+
 export type CheckResult = {
   id: string
   source: string
@@ -18,6 +68,10 @@ export type CheckResult = {
   consultation_number: string | null
   /** How current the source's data was (imported lists); null for live sources. */
   data_as_of: string | null
+  /** Firmenbuch only: legal form, seat, status flags and persons. */
+  register_details?: RegisterDetails | null
+  /** GISA only: every licence of the partner (null when GISA could not be asked). */
+  licences?: Licence[] | null
 }
 
 export type Partner = {
@@ -33,6 +87,8 @@ export type Partner = {
   latest_vies_check: CheckResult | null
   latest_bmf_check: CheckResult | null
   latest_hfu_check: CheckResult | null
+  latest_firmenbuch_check?: CheckResult | null
+  latest_gisa_check?: CheckResult | null
 }
 export type PartnerPage = {
   items: Partner[]
@@ -171,6 +227,32 @@ export function runBmfCheck(partnerId: string): Promise<CheckResult> {
 export function runHfuCheck(partnerId: string): Promise<CheckResult> {
   return request<CheckResult>(
     `/partners/${encodeURIComponent(partnerId)}/checks/hfu`,
+    { method: 'POST' },
+    CHECK_TIMEOUT_MS,
+  )
+}
+
+/**
+ * Ask the Firmenbuch (Austrian company register) about the partner's FN.
+ * OK: registered and active. FINDING: deleted, insolvency, liquidation, or no company
+ * with this FN. ERROR is a normal result (e.g. register not reachable or not set up).
+ */
+export function runFirmenbuchCheck(partnerId: string): Promise<CheckResult> {
+  return request<CheckResult>(
+    `/partners/${encodeURIComponent(partnerId)}/checks/firmenbuch`,
+    { method: 'POST' },
+    CHECK_TIMEOUT_MS,
+  )
+}
+
+/**
+ * Ask GISA for the partner's business licences (searched by FN).
+ * OK: at least one active licence. FINDING: no active licence or none at all.
+ * ERROR is a normal result (e.g. GISA not reachable or not set up).
+ */
+export function runGisaCheck(partnerId: string): Promise<CheckResult> {
+  return request<CheckResult>(
+    `/partners/${encodeURIComponent(partnerId)}/checks/gisa`,
     { method: 'POST' },
     CHECK_TIMEOUT_MS,
   )

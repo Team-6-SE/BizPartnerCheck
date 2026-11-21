@@ -23,7 +23,16 @@ import {
 import { ChangedSince } from '@/components/check-changes'
 import { CheckResultView } from '@/components/check-result'
 import { PageHeader } from '@/components/page-header'
-import { BMF_LABELS, HFU_LABELS, VIES_LABELS, labelsFor, sourceName } from '@/lib/check-results'
+import {
+  BMF_LABELS,
+  FIRMENBUCH_LABELS,
+  GISA_LABELS,
+  HFU_LABELS,
+  VIES_LABELS,
+  labelsFor,
+  sourceName,
+  statusLabel,
+} from '@/lib/check-results'
 import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -54,10 +63,26 @@ const dateFormat = new Intl.DateTimeFormat(undefined, {
 const SEARCH_DELAY_MS = 300
 
 // Which field of a partner holds the latest result of a source.
-const LATEST_FIELD: Record<string, 'latest_vies_check' | 'latest_bmf_check' | 'latest_hfu_check'> = {
+const LATEST_FIELD: Record<
+  string,
+  'latest_vies_check' | 'latest_bmf_check' | 'latest_hfu_check' | 'latest_firmenbuch_check' | 'latest_gisa_check'
+> = {
   VIES: 'latest_vies_check',
   BMF: 'latest_bmf_check',
   HFU: 'latest_hfu_check',
+  FIRMENBUCH: 'latest_firmenbuch_check',
+  GISA: 'latest_gisa_check',
+}
+
+/** Any source has a result: the button then says "Check Again". */
+function wasChecked(partner: Partner): boolean {
+  return Boolean(
+    partner.latest_vies_check ||
+      partner.latest_bmf_check ||
+      partner.latest_hfu_check ||
+      partner.latest_firmenbuch_check ||
+      partner.latest_gisa_check,
+  )
 }
 
 function errorMessage(error: unknown): string {
@@ -261,7 +286,7 @@ export function PartnersPage() {
     setCheckErrors(({ [partner.id]: _old, ...rest }) => rest)
     setChanges(({ [partner.id]: _old, ...rest }) => rest)
     const label = partnerLabel(partner)
-    setAnnouncement(`Checking ${label} in VIES, the BMF list and the HFU list…`)
+    setAnnouncement(`Checking ${label}…`)
 
     const fresh = new Set<string>()
     // Show every result as soon as it is there, and "Checking…" for the sources still asked.
@@ -287,7 +312,7 @@ export function PartnersPage() {
       show(firstRun)
       const run = await waitForCheckRun(firstRun, { onProgress: show })
       const said = run.results.map(
-        (result) => `${sourceName(result.source)}: ${labelsFor(result.source)[result.status]}.`,
+        (result) => `${sourceName(result.source)}: ${statusLabel(result, labelsFor(result.source))}.`,
       )
       if (run.changes.length) {
         setChanges((current) => ({ ...current, [partner.id]: run.changes }))
@@ -341,6 +366,8 @@ export function PartnersPage() {
         latest_vies_check: item.latest_vies_check,
         latest_bmf_check: item.latest_bmf_check,
         latest_hfu_check: item.latest_hfu_check,
+        latest_firmenbuch_check: item.latest_firmenbuch_check,
+        latest_gisa_check: item.latest_gisa_check,
       }))
       setEditingPartnerId(null)
       setEditedCompanyName('')
@@ -461,7 +488,8 @@ export function PartnersPage() {
           <CardDescription>
             All partners of your organization. “Check” asks VIES whether the VAT number is valid,
             compares the partner with the BMF list of fake companies and asks the ÖGK whether it is
-            on the HFU list (contractor liability).
+            on the HFU list (contractor liability). Partners with a company register number are also
+            looked up in the Firmenbuch and in GISA (business licences).
           </CardDescription>
           {loadState.status === 'ready' && (
             <CardAction>
@@ -578,6 +606,8 @@ export function PartnersPage() {
                     <TableHead>VIES result</TableHead>
                     <TableHead>BMF list</TableHead>
                     <TableHead>HFU list</TableHead>
+                    <TableHead>Firmenbuch</TableHead>
+                    <TableHead>GISA</TableHead>
                     <TableHead className="text-right max-sm:hidden">
                       <span className="sr-only">Actions</span>
                     </TableHead>
@@ -588,6 +618,8 @@ export function PartnersPage() {
                     const check = partner.latest_vies_check
                     const bmfCheck = partner.latest_bmf_check
                     const hfuCheck = partner.latest_hfu_check
+                    const registerCheck = partner.latest_firmenbuch_check
+                    const gisaCheck = partner.latest_gisa_check
                     const errors = checkErrors[partner.id]
                     const checking = checkingIds.has(partner.id)
                     const waiting = waitingSources[partner.id] ?? []
@@ -753,6 +785,42 @@ export function PartnersPage() {
                             <span className="text-muted-foreground">No VAT number, HFU does not apply</span>
                           )}
                         </TableCell>
+                        <TableCell className="min-w-52 align-top whitespace-normal">
+                          {waiting.includes('FIRMENBUCH') ? (
+                            <WaitingForSource />
+                          ) : registerCheck ? (
+                            <>
+                              <CheckResultView
+                                check={registerCheck}
+                                labels={FIRMENBUCH_LABELS}
+                                fresh={freshCheckIds.has(registerCheck.id)}
+                              />
+                              <ChangedSince changes={changed} source="FIRMENBUCH" />
+                            </>
+                          ) : partner.company_register_number ? (
+                            <span className="text-muted-foreground">Not checked yet</span>
+                          ) : (
+                            <span className="text-muted-foreground">No FN, Firmenbuch does not apply</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="min-w-52 align-top whitespace-normal">
+                          {waiting.includes('GISA') ? (
+                            <WaitingForSource />
+                          ) : gisaCheck ? (
+                            <>
+                              <CheckResultView
+                                check={gisaCheck}
+                                labels={GISA_LABELS}
+                                fresh={freshCheckIds.has(gisaCheck.id)}
+                              />
+                              <ChangedSince changes={changed} source="GISA" />
+                            </>
+                          ) : partner.company_register_number ? (
+                            <span className="text-muted-foreground">Not checked yet</span>
+                          ) : (
+                            <span className="text-muted-foreground">No FN, GISA does not apply</span>
+                          )}
+                        </TableCell>
                         <TableCell className="text-right align-top max-sm:hidden">
                           <CheckButton partner={partner} checking={checking} onCheck={handleCheck} />
                         </TableCell>
@@ -812,7 +880,8 @@ function CheckButton({
 }) {
   // Archived partners are not checked (the backend answers 404 for them).
   if (partner.is_archived) return null
-  // Every partner can be checked against the BMF list; VIES and the HFU list only with a VAT number.
+  // Every partner can be checked against the BMF list; VIES and the HFU list only with a VAT
+  // number, the Firmenbuch and GISA only with a company register number (and once set up).
   const sources = partner.vat_number ? 'in VIES, the BMF list and the HFU list' : 'in the BMF list'
   return (
     <Button
@@ -825,7 +894,7 @@ function CheckButton({
       {checking ? <Spinner data-icon="inline-start" /> : <SearchCheckIcon data-icon="inline-start" />}
       {checking
         ? 'Checking…'
-        : partner.latest_vies_check || partner.latest_bmf_check || partner.latest_hfu_check
+        : wasChecked(partner)
           ? 'Check Again'
           : 'Check'}
       <span className="sr-only">

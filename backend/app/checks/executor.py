@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.adapters import bmf, hfu, vies
+from app.adapters import bmf, firmenbuch, gisa, hfu, vies
 from app.adapters.base import (
     NO_ANSWER_IN_TIME,
     CheckStatus,
@@ -41,6 +41,8 @@ SessionFactory = Callable[[], AbstractContextManager[Session]]
 DEFAULT_DEADLINE_SECONDS = 30.0
 # Sources that identify the partner by its VAT number only.
 NEEDS_VAT_NUMBER = frozenset({vies.SOURCE, hfu.SOURCE})
+# Sources that identify the partner by its company register number (FN) only.
+NEEDS_REGISTER_NUMBER = frozenset({firmenbuch.SOURCE, gisa.SOURCE})
 # BMF also compares the company name, so it waits for the name VIES returns in the
 # same run (a new partner has no earlier VIES name).
 WAITS_FOR = {bmf.SOURCE: vies.SOURCE}
@@ -64,6 +66,8 @@ def default_adapters(sessions: SessionFactory) -> dict[str, SourceAdapter]:
     # Imported here: the adapter modules import FastAPI dependencies.
     from app.adapters.bmf import BmfAdapter
     from app.adapters.fake import with_fake_from_env
+    from app.adapters.firmenbuch import get_firmenbuch_adapter
+    from app.adapters.gisa import get_gisa_adapter
     from app.adapters.hfu import get_hfu_adapter
     from app.adapters.vies import get_vies_adapter
 
@@ -71,6 +75,8 @@ def default_adapters(sessions: SessionFactory) -> dict[str, SourceAdapter]:
         vies.SOURCE: get_vies_adapter(),
         bmf.SOURCE: with_fake_from_env(BmfAdapter(sessions)),
         hfu.SOURCE: get_hfu_adapter(),
+        firmenbuch.SOURCE: get_firmenbuch_adapter(),
+        gisa.SOURCE: get_gisa_adapter(),
     }
 
 
@@ -173,7 +179,10 @@ def ask_all(
             if adapter is None:
                 done(source, _error(source, "This source is not available."))
             elif source in NEEDS_VAT_NUMBER and not subject.vat_number:
-                done(source, _not_applicable(source))
+                done(source, _not_applicable(source, "VAT number"))
+            elif source in NEEDS_REGISTER_NUMBER and not subject.register_number:
+                # E.g. a foreign partner: the Austrian register does not cover it.
+                done(source, _not_applicable(source, "company register number"))
             elif WAITS_FOR.get(source) in by_source:
                 waiting[source] = WAITS_FOR[source]
             else:
@@ -284,12 +293,13 @@ def _error(source: str, explanation: str, raw: dict | None = None) -> SourceResu
     )
 
 
-def _not_applicable(source: str) -> SourceResult:
+def _not_applicable(source: str, missing: str) -> SourceResult:
+    name = "Firmenbuch" if source == firmenbuch.SOURCE else source
     return SourceResult(
         source=source,
         status=CheckStatus.NOT_APPLICABLE,
-        explanation=f"No VAT number, {source} does not apply.",
+        explanation=f"No {missing}, {name} does not apply.",
         retrieved_at=datetime.now(UTC),
         data_as_of=None,
-        raw={"notApplicable": "no VAT number"},
+        raw={"notApplicable": f"no {missing}"},
     )
