@@ -1,6 +1,8 @@
 .idea/
 .DS_Store
 .env
+# Server secrets (infra/deploy.env.example is the template): never in git.
+deploy.env
 __pycache__/
 .venv/
 .coverage
