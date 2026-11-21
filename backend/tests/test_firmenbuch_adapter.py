@@ -11,11 +11,13 @@ from datetime import UTC, datetime
 
 import httpx2 as httpx
 import pytest
+from defusedxml.common import DefusedXmlException
 
-from app.adapters.base import CheckStatus, CheckSubject, Scenario
+from app.adapters.base import BAD_RESPONSE, CheckStatus, CheckSubject, Scenario
 from app.adapters.fake import FakeAdapter
 from app.adapters.firmenbuch import (
     API_KEY_HEADER,
+    INVALID_NUMBER,
     NO_API_KEY,
     SOAP_FAULT,
     FirmenbuchAdapter,
@@ -309,6 +311,65 @@ def test_insolvency_liquidation_and_deletion_are_findings_with_the_flag(
     assert "Please check carefully" in result.explanation
 
 
+@pytest.mark.parametrize(
+    ("text", "kind"),
+    [
+        ("Konkursverfahren eröffnet", "insolvency"),
+        (
+            "Die Gesellschaft ist infolge Eröffnung des Konkurses aufgelöst.",
+            "insolvency",
+        ),
+        (
+            "Auflösung durch Beschluss der Generalversammlung vom 12.03.2026",
+            "liquidation",
+        ),
+        ("Auflösung der Gesellschaft", "liquidation"),
+        ("Löschung der Firma", "deleted"),
+        ("Die Firma ist gelöscht.", "deleted"),
+    ],
+)
+def test_more_wordings_of_the_flags(text: str, kind: str) -> None:
+    raw = parse_response(extract(facts=legal_fact(text)))
+
+    assert [flag["kind"] for flag in status_flags(raw)] == [kind]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Löschung der Prokura",  # a signing authority was removed
+        "Löschung des Geschäftsführers Karl Alt",
+        "Prokura gelöscht",
+        "Auflösung der Zweigniederlassung Linz",
+        "Erteilung der Prokura",
+    ],
+)
+def test_facts_about_something_else_are_not_flags(text: str) -> None:
+    adapter, _ = make_adapter(answers(extract(facts=legal_fact(text))))
+
+    result = adapter.check(SUBJECT)
+
+    assert status_flags(result.raw) == []
+    assert result.status == CheckStatus.OK
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        ("Müller Abwicklungsservice GmbH",),
+        ("Liquidationsberatung Huber KG",),
+        ("Insolvenz-Beratung Went GmbH",),  # the name is only read for "in Liqu."
+    ],
+)
+def test_words_inside_a_company_name_are_not_flags(name: tuple[str, ...]) -> None:
+    adapter, _ = make_adapter(answers(extract(name=name)))
+
+    result = adapter.check(SUBJECT)
+
+    assert status_flags(result.raw) == []
+    assert result.status == CheckStatus.OK
+
+
 def test_company_deleted_with_an_entry_is_a_finding() -> None:
     adapter, _ = make_adapter(answers(extract(deleted="045")))
 
@@ -318,10 +379,11 @@ def test_company_deleted_with_an_entry_is_a_finding() -> None:
     assert "deleted from the register" in result.explanation
 
 
-def test_in_liquidation_in_the_name_is_a_finding() -> None:
-    raw = parse_response(extract(name=("Went GmbH in Liqu.",)))
+@pytest.mark.parametrize("name", ["Went GmbH in Liqu.", "Went GmbH in Liquidation"])
+def test_in_liquidation_in_the_name_is_a_finding(name: str) -> None:
+    raw = parse_response(extract(name=(name,)))
 
-    adapter, _ = make_adapter(answers(extract(name=("Went GmbH in Liqu.",))))
+    adapter, _ = make_adapter(answers(extract(name=(name,))))
 
     assert [flag["kind"] for flag in status_flags(raw)] == ["liquidation"]
     assert adapter.check(SUBJECT).status == CheckStatus.FINDING
@@ -335,16 +397,52 @@ def test_legal_facts_that_are_no_longer_valid_are_ignored() -> None:
     assert adapter.check(SUBJECT).status == CheckStatus.OK
 
 
-def test_ended_insolvency_proceedings_need_a_review() -> None:
-    adapter, _ = make_adapter(
-        answers(extract(facts=legal_fact("Sanierungsverfahren aufgehoben")))
-    )
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Sanierungsverfahren aufgehoben",
+        "Aufhebung des Konkurses",
+        "Konkursverfahren eröffnet am 01.02.2025, aufgehoben am 03.04.2026",
+    ],
+)
+def test_ended_insolvency_proceedings_need_a_review(text: str) -> None:
+    adapter, _ = make_adapter(answers(extract(facts=legal_fact(text))))
 
     result = adapter.check(SUBJECT)
 
     assert result.status == CheckStatus.REVIEW
     assert "ended proceedings" in result.explanation
-    assert "Sanierungsverfahren aufgehoben" in result.explanation
+    assert text in result.explanation
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # "aufgehoben" belongs to the power of representation, not to the insolvency.
+        "Konkurs eröffnet; Vertretungsbefugnis aufgehoben",
+        "Konkurs eröffnet. Die Prokura ist aufgehoben.",
+        # Too little money even for the proceedings: no good news.
+        "Konkurs mangels Kostendeckung aufgehoben",
+    ],
+)
+def test_insolvency_counts_as_ended_only_when_the_insolvency_itself_ended(
+    text: str,
+) -> None:
+    adapter, _ = make_adapter(answers(extract(facts=legal_fact(text))))
+
+    result = adapter.check(SUBJECT)
+
+    assert result.status == CheckStatus.FINDING
+    assert status_flags(result.raw)[0]["ended"] is False
+
+
+def test_one_running_insolvency_wins_over_one_that_ended() -> None:
+    facts = legal_fact("Sanierungsverfahren aufgehoben") + legal_fact(
+        "Konkurs eröffnet"
+    )
+    adapter, _ = make_adapter(answers(extract(facts=facts)))
+
+    assert adapter.check(SUBJECT).status == CheckStatus.FINDING
 
 
 # --- not found and errors: shown differently --------------------------------------------
@@ -354,8 +452,8 @@ def test_ended_insolvency_proceedings_need_a_review() -> None:
     "text",
     [
         "Die Firmenbuchnummer 999999z wurde nicht gefunden",
-        'Der Parameter "FNR" ist ungültig',
         "Firma existiert nicht",
+        "Keine Firma zur FNR 58468h vorhanden",
     ],
 )
 def test_unknown_register_number_is_a_finding_not_an_error(text: str) -> None:
@@ -368,6 +466,51 @@ def test_unknown_register_number_is_a_finding_not_an_error(text: str) -> None:
     assert result.raw["notFound"] is True
     assert len(requests) == 1  # not asked again
     assert "has no company with FN 58468h" in result.explanation
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Unbekannter Fehler",
+        "Unbekannter Fehler bei der Abfrage der Firmenbuchnummer 58468h",
+        "Datensatz nicht gefunden",  # names neither the company nor the number
+        "API-Key nicht gefunden",
+        'Der Parameter "KEY" ist ungültig',
+        "Interner Fehler",
+    ],
+)
+def test_faults_that_do_not_clearly_say_not_found_are_errors(text: str) -> None:
+    # A wrong "this company does not exist" is worse than "could not check".
+    adapter, requests = make_adapter(answers(fault(text), status=500))
+
+    result = adapter.check(SUBJECT)
+
+    assert result.status == CheckStatus.ERROR
+    assert result.raw["error"] == SOAP_FAULT
+    assert "notFound" not in result.raw
+    assert len(requests) == 1
+    assert "has no company" not in result.explanation
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # The fault from the interface description for a malformed number.
+        "Firmenbuchnummer ist ungültig! (max. 6 Ziffern plus Prüfzeichen)",
+        'Der Parameter "FNR" ist ungültig',
+    ],
+)
+def test_number_the_service_does_not_accept_is_an_error(text: str) -> None:
+    # If our format were wrong, every partner would get this: not a finding.
+    adapter, requests = make_adapter(answers(fault(text), status=500))
+
+    result = adapter.check(SUBJECT)
+
+    assert result.status == CheckStatus.ERROR
+    assert result.raw["error"] == INVALID_NUMBER
+    assert len(requests) == 1
+    assert "did not accept FN 58468h as a company register number" in result.explanation
+    assert "not confirmed" in result.explanation
 
 
 def test_other_soap_faults_are_errors_and_not_retried() -> None:
@@ -438,6 +581,38 @@ def test_answer_without_extract_is_error() -> None:
     )
 
     assert adapter.check(SUBJECT).status == CheckStatus.ERROR
+
+
+def test_extract_without_company_is_an_error_not_not_found() -> None:
+    body = (
+        '<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope"><env:Body>'
+        f'<ns6:AUSZUG_V2_RESPONSE ns6:FNR="58468 h" xmlns:ns6="{NS}"/>'
+        "</env:Body></env:Envelope>"
+    )
+    adapter, _ = make_adapter(answers(body))
+
+    result = adapter.check(SUBJECT)
+
+    assert result.status == CheckStatus.ERROR
+    assert result.raw["error"] == BAD_RESPONSE
+    assert "notFound" not in result.raw
+
+
+def test_xml_with_entities_is_refused() -> None:
+    # defusedxml: no entity expansion ("billion laughs") and no external entities.
+    body = (
+        '<?xml version="1.0"?><!DOCTYPE x [<!ENTITY a "aaaaaaaaaa">'
+        '<!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;">]>'
+        "<x>&b;</x>"
+    )
+    with pytest.raises(DefusedXmlException):
+        parse_response(body)
+
+    adapter, _ = make_adapter(answers(body))
+    result = adapter.check(SUBJECT)
+
+    assert result.status == CheckStatus.ERROR
+    assert result.raw["error"] == BAD_RESPONSE
 
 
 def test_describe_unknown_error_never_sounds_like_ok() -> None:

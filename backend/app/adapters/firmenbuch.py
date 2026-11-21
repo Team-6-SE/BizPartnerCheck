@@ -22,9 +22,13 @@ persons are not read and never stored.
     registered, no flag                 -> OK
     deleted, insolvency, liquidation    -> FINDING (the flag is shown)
     only insolvency proceedings that ended -> REVIEW
-    no company with this FN             -> FINDING ("not in the register")
+    a fault that clearly says "no such FN" -> FINDING ("not in the register")
     no FN (e.g. foreign partner)        -> NOT_APPLICABLE (the check run does not ask)
-    no API key, refused, not reachable  -> ERROR
+    no API key, refused, not reachable,
+    any other fault or answer we do not understand -> ERROR
+
+When in doubt the result is ERROR ("could not check"), never a FINDING that is not
+there: a wrong "this company does not exist" is worse than no answer.
 
 Details and the open points to verify with the real service: docs/firmenbuch.md
 """
@@ -38,6 +42,8 @@ from xml.sax.saxutils import escape
 from zoneinfo import ZoneInfo
 
 import httpx2 as httpx
+from defusedxml import ElementTree as SafeET
+from defusedxml.common import DefusedXmlException
 
 from app.adapters.base import (
     BAD_RESPONSE,
@@ -61,39 +67,110 @@ EXTENT = "Kurzinformation"
 # Our own error codes for this source.
 NO_API_KEY = "NO_API_KEY"  # FIRMENBUCH_API_KEY is not set: nothing is sent
 SOAP_FAULT = "SOAP_FAULT"  # the service refused the request
+INVALID_NUMBER = "INVALID_NUMBER"  # the service did not accept the FN as a number
 
 # The register is Austrian, so "today" is the day in Vienna (a later day is refused).
 VIENNA = ZoneInfo("Europe/Vienna")
 
-# Fault texts that mean "there is no company with this number". The interface
-# description shows no example for this case, so we accept the usual wordings.
-# To verify with the real service (docs/firmenbuch.md).
-_NOT_FOUND = re.compile(
-    r"nicht gefunden|nicht vorhanden|existiert nicht|nicht existent|keine firma"
-    r"|kein(?:e|en)? (?:eintrag|daten|treffer)|unbekannt"
-    r"|(?:fnr|firmenbuchnummer)\W.*ungültig|ungültig\W.*(?:fnr|firmenbuchnummer)"
-    r"|not found|does not exist",
+# --- reading fault texts ---------------------------------------------------------------
+# The interface description shows no fault for an FN that does not exist, so we cannot
+# know its exact wording (to verify with the real service, docs/firmenbuch.md). Only a
+# text that names the company or the number AND says it does not exist counts as "not
+# found"; any other fault, e.g. "Unbekannter Fehler", stays an error.
+_NUMBER_OR_COMPANY = re.compile(
+    r"\b(?:firma|firmenbuchnummer|fnr|fn|rechtsträger|unternehmen|company)\b",
+    re.IGNORECASE,
+)
+_DOES_NOT_EXIST = re.compile(
+    r"\b(?:nicht gefunden|nicht vorhanden|existiert nicht|nicht existent"
+    r"|not found|does not exist)\b"
+    r"|\bkein(?:e|en)? (?:firma|eintrag|daten|treffer)\b",
+    re.IGNORECASE,
+)
+# Faults about our request (the key, the reference date): never "not found".
+_ABOUT_REQUEST = re.compile(r"\b(?:key|schlüssel|parameter|stichtag)\b", re.IGNORECASE)
+# The documented fault for a malformed number: "Firmenbuchnummer ist ungültig! (max. 6
+# Ziffern plus Prüfzeichen)". If our format were wrong, every check would get it, so
+# it is an error to look at, not a finding about the partner.
+_INVALID_NUMBER = re.compile(
+    r"\b(?:firmenbuchnummer|fnr|fn)\b.*\bungültig|\bungültige (?:firmenbuchnummer|fnr)\b",
     re.IGNORECASE,
 )
 
-# Words in a legal fact (Rechtstatsache) or in the name that mark a company as not
-# (fully) active. Matching on the text, because the codes are not documented.
-_FLAG_WORDS = {
-    "deleted": re.compile(r"gelöscht|löschung", re.IGNORECASE),
-    "insolvency": re.compile(
-        r"konkurs|insolvenz|sanierungsverfahren|schuldenregulierung"
-        r"|ausgleichsverfahren|zahlungsunfähig",
-        re.IGNORECASE,
-    ),
-    "liquidation": re.compile(
-        r"liquidation|\bin liqu\b|aufgelöst|auflösung|abwicklung", re.IGNORECASE
-    ),
-}
-# Insolvency proceedings that are over (the company may be active again).
-_ENDED = re.compile(
-    r"aufgehoben|beendet|eingestellt|abgeschlossen|rechtskräftig bestätigt",
+
+def fault_kind(reason: str | None) -> str:
+    """'notFound', INVALID_NUMBER or SOAP_FAULT for the text of a SOAP fault."""
+    if not reason:
+        return SOAP_FAULT
+    if _INVALID_NUMBER.search(reason):
+        return INVALID_NUMBER
+    if (
+        _NUMBER_OR_COMPANY.search(reason)
+        and _DOES_NOT_EXIST.search(reason)
+        and not _ABOUT_REQUEST.search(reason)
+    ):
+        return "notFound"
+    return SOAP_FAULT
+
+
+# --- reading legal facts (Rechtstatsachen) ---------------------------------------------
+# Every legal fact has a CODE, but the HVD description does not list the codes, so for
+# now we read the German text. UNVERIFIED: these rules follow the usual register
+# wording and must be checked with real extracts (docs/firmenbuch.md); once the codes
+# are known, matching on them is better.
+#
+# Whole words only, read clause by clause, and "Löschung" / "Auflösung" only when they
+# are about the company: "Löschung der Prokura" (a signing authority removed) or
+# "Abwicklungsservice" are not flags.
+_COMPANY = r"(?:firma|gesellschaft|rechtsträger|unternehmen)\b"
+# "Löschung der Prokura", "Auflösung der Zweigniederlassung": about something else.
+_OF_SOMETHING_ELSE = rf"(?!\s+(?:der|des|von|eines|einer)\s+(?!{_COMPANY}))"
+_INSOLVENCY = re.compile(
+    r"\b(?:konkurs|insolvenz|sanierungsverfahren|schuldenregulierung"
+    r"|ausgleichsverfahren|zahlungsunfähig)",
     re.IGNORECASE,
 )
+_FLAG_WORDS = {
+    "deleted": re.compile(
+        rf"\blöschung\b{_OF_SOMETHING_ELSE}|\b{_COMPANY}.*\bgelöscht\b", re.IGNORECASE
+    ),
+    "insolvency": _INSOLVENCY,
+    "liquidation": re.compile(
+        rf"\bliquidation\b|\bin liqu\b|\babwicklung\b|\bauflösung\b{_OF_SOMETHING_ELSE}"
+        rf"|\b{_COMPANY}.*\baufgelöst\b",
+        re.IGNORECASE,
+    ),
+}
+# In the name only the suffix the law asks for during liquidation ("in Liqu.").
+_NAME_IN_LIQUIDATION = re.compile(r"\bin liquidation\b|\bin liqu\b", re.IGNORECASE)
+# Insolvency proceedings that are over (the company may be active again) ...
+_ENDED = re.compile(
+    r"\b(?:aufgehoben|aufhebung|beendet|beendigung|eingestellt|einstellung"
+    r"|abgeschlossen|rechtskräftig bestätigt)\b",
+    re.IGNORECASE,
+)
+# ... but not "mangels Kostendeckung": then the company had too little money even for
+# the proceedings, which is no good news.
+_NO_ASSETS = re.compile(r"\bmangels\b", re.IGNORECASE)
+# Clauses: split at ";", line breaks and full stops that end a sentence (not in dates).
+_CLAUSE_END = re.compile(r"[;\n]|\.(?=\s+[A-ZÄÖÜ])")
+
+
+def _clauses(text: str) -> list[str]:
+    return [part.strip() for part in _CLAUSE_END.split(text) if part.strip()]
+
+
+def _insolvency_ended(text: str) -> bool:
+    """True only if every clause about insolvency itself says it has ended.
+
+    "Konkurs aufgehoben" has ended; "Konkurs eröffnet; Vertretungsbefugnis aufgehoben"
+    has not (the ending word belongs to another fact). When unsure: not ended.
+    """
+    about = [c for c in _clauses(text) if _INSOLVENCY.search(c)]
+    return bool(about) and all(
+        _ENDED.search(c) and not _NO_ASSETS.search(c) for c in about
+    )
+
 
 FLAG_LABELS = {
     "deleted": "deleted from the register",
@@ -280,8 +357,12 @@ def _deleted_by(firma: ET.Element) -> str | None:
 
 
 def parse_response(body: str) -> dict[str, Any]:
-    """The parts of the SOAP answer the check needs. Raises ET.ParseError if not XML."""
-    root = ET.fromstring(body)
+    """The parts of the SOAP answer the check needs.
+
+    Parsed with defusedxml (no entities, no DTD). Raises ET.ParseError if the body is
+    not XML and DefusedXmlException if it tries entity or DTD tricks.
+    """
+    root = SafeET.fromstring(body)
     for element in root.iter():
         if _name(element) == "Fault":
             reason = next(
@@ -292,17 +373,19 @@ def parse_response(body: str) -> dict[str, Any]:
                 ),
                 None,
             )
-            if reason and _NOT_FOUND.search(reason):
+            kind = fault_kind(reason)
+            if kind == "notFound":
                 return {"notFound": True, "fault": reason}
-            return {"error": SOAP_FAULT, "fault": reason}
+            return {"error": kind, "fault": reason}
 
     answer = next((e for e in root.iter() if _name(e) == "AUSZUG_V2_RESPONSE"), None)
     if answer is None:
         return {"error": BAD_RESPONSE, "message": "no AUSZUG_V2_RESPONSE"}
     firma = _child(answer, "FIRMA")
     if firma is None:
-        # The schema requires FIRMA; an answer without it names no company.
-        return {"notFound": True, "fault": None}
+        # The schema requires FIRMA: an answer without it is broken, it does not
+        # prove that the company does not exist.
+        return {"error": BAD_RESPONSE, "message": "AUSZUG_V2_RESPONSE without FIRMA"}
 
     name_group = _current(_children(firma, "FI_DKZ02"))
     name_lines = _texts(name_group, "BEZEICHNUNG") if name_group is not None else []
@@ -338,7 +421,7 @@ def status_flags(raw: dict[str, Any]) -> list[dict[str, Any]]:
     if company.get("deletedByEntry"):
         flags.append({"kind": "deleted", "text": None, "date": None, "ended": False})
     name = company.get("name") or ""
-    if _FLAG_WORDS["liquidation"].search(name):
+    if _NAME_IN_LIQUIDATION.search(name):
         flags.append(
             {"kind": "liquidation", "text": name, "date": None, "ended": False}
         )
@@ -346,8 +429,9 @@ def status_flags(raw: dict[str, Any]) -> list[dict[str, Any]]:
         if not isinstance(fact, dict):
             continue
         text = fact.get("text") or ""
+        clauses = _clauses(text)
         for kind, words in _FLAG_WORDS.items():
-            if not words.search(text):
+            if not any(words.search(clause) for clause in clauses):
                 continue
             if kind == "deleted" and any(f["kind"] == "deleted" for f in flags):
                 continue
@@ -356,7 +440,7 @@ def status_flags(raw: dict[str, Any]) -> list[dict[str, Any]]:
                     "kind": kind,
                     "text": text,
                     "date": fact.get("date"),
-                    "ended": kind == "insolvency" and bool(_ENDED.search(text)),
+                    "ended": kind == "insolvency" and _insolvency_ended(text),
                 }
             )
             break
@@ -447,7 +531,7 @@ class FirmenbuchAdapter(SourceAdapter):
             )
         try:
             parsed = parse_response(response.text)
-        except ET.ParseError:
+        except (ET.ParseError, DefusedXmlException):
             # E.g. an HTML error page (429, 401); a short excerpt is enough as evidence.
             parsed = {"error": BAD_RESPONSE, "message": response.text[:300]}
 
@@ -463,7 +547,7 @@ class FirmenbuchAdapter(SourceAdapter):
         if raw.get("notFound") is True:
             # Checked before the HTTP status: a fault may come with HTTP 500.
             return Interpretation(CheckStatus.FINDING)
-        if error == SOAP_FAULT:
+        if error in (SOAP_FAULT, INVALID_NUMBER):
             # The service refused our request: asking again would not help.
             return Interpretation(CheckStatus.ERROR)
         http_status = raw.get("httpStatus")
@@ -606,6 +690,13 @@ def describe(status: CheckStatus, raw: dict[str, Any]) -> str:
         return (
             "The Firmenbuch check is not set up on this server yet (no API key). "
             "The result was not confirmed."
+        )
+    if error == INVALID_NUMBER:
+        reason = raw.get("fault")
+        detail = f' ("{reason}")' if reason else ""
+        return (
+            f"The Firmenbuch did not accept {fn} as a company register number{detail}. "
+            "The result was not confirmed. Please check the number with the partner."
         )
     if error == SOAP_FAULT:
         reason = raw.get("fault")
