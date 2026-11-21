@@ -139,12 +139,12 @@ describe('GISA results', () => {
     expect(statusLabel(check({ source: 'GISA', licences: [licence] }))).toBe('Active licence')
   })
 
-  it('shows "no licence" differently from "no active licence" and from an error', () => {
-    const none = check({ source: 'GISA', status: 'FINDING', licences: [] })
+  it('shows "no licence found" differently from "no active licence" and from an error', () => {
+    const none = check({ source: 'GISA', status: 'REVIEW', licences: [] })
     const ended = check({ source: 'GISA', status: 'FINDING', licences: [{ ...licence, state: 'ended' }] })
     const unavailable = check({ source: 'GISA', status: 'ERROR', licences: null })
 
-    expect(statusLabel(none)).toBe('No licence')
+    expect(statusLabel(none)).toBe('No licence found')
     expect(statusLabel(ended)).toBe('No active licence')
     expect(statusLabel(unavailable)).toBe('Error')
   })

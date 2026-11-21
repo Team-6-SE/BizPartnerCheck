@@ -84,7 +84,7 @@ def test_no_licence_and_unavailable_are_shown_differently(
     fake_gisa.answer = {"error": "NOT_REACHABLE", "message": "ConnectError"}
     unavailable = run_check(client, partner["id"]).json()
 
-    assert none["status"] == "FINDING"
+    assert none["status"] == "REVIEW"  # many companies need no licence
     assert none["licences"] == []
     assert unavailable["status"] == "ERROR"
     assert unavailable["licences"] is None

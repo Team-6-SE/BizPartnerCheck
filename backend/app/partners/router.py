@@ -790,8 +790,9 @@ def run_gisa_check(
 ) -> CheckRead:
     """Ask GISA for the partner's business licences (searched by FN).
 
-    OK: at least one active licence (all licences are listed). FINDING: no active
-    licence, or no licence at all. REVIEW: the status of the licences is unclear.
+    OK: at least one active licence (all licences are listed). FINDING: licences,
+    but none active. REVIEW: no licence found (many companies need none), or the
+    status of the licences is unclear.
     ERROR: GISA could not be asked (also when the API key is not set on the server).
     """
     return _run_check(

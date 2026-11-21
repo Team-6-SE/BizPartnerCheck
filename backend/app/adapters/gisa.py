@@ -18,7 +18,8 @@ key holder's name. It is never stored in a result.
 
     at least one active licence               -> OK (all licences listed)
     licences, but none active (ended, ruhend) -> FINDING ("no active licence")
-    an empty hit list                         -> FINDING ("no licence")
+    an empty hit list                         -> REVIEW ("no licence found": many
+                                                 companies need none)
     only licences whose status is unclear     -> REVIEW
     no company register number                -> NOT_APPLICABLE (the run does not ask)
     no API key, key refused, not reachable,
@@ -332,7 +333,13 @@ def parse_detail(body: str) -> dict[str, Any]:
 
 
 def licence_state(licence: dict[str, Any], today: date | None = None) -> str:
-    """active, suspended, ended or unknown, from the dates GISA gives."""
+    """active, suspended, ended or unknown, from the dates GISA gives.
+
+    The XML structure file defines the dates: RechtswirksamAb "Ab diesem Tag erlangt
+    der Eintrag Rechtswirksamkeit", EndigungDatum "Ab diesem Tag ist der Eintrag
+    beendet" (so on that day the licence has ended). RuhendBis is only "Ende des
+    Ruhenszeitraumes": on that day itself the state is unknown (REVIEW, not green).
+    """
     day = (today or date.today()).isoformat()
     if licence.get("historic"):
         return ENDED
@@ -343,6 +350,8 @@ def licence_state(licence: dict[str, Any], today: date | None = None) -> str:
         until = licence.get("suspendedUntil")
         if not until or until > day:
             return SUSPENDED
+        if until == day:
+            return UNKNOWN
     start = licence.get("start")
     if start and start <= day:
         return ACTIVE
@@ -572,9 +581,12 @@ class GisaAdapter(SourceAdapter):
             # A current licence we could not read may be active: "could not check".
             temporary = any(problem.get("temporary") for problem in failed)
             return Interpretation(CheckStatus.ERROR, try_again=temporary)
-        if UNKNOWN in states:
+        if UNKNOWN in states or not states:
+            # No licence found is not a finding: many companies need none
+            # (liberal professions, holdings, agriculture), and a sole trader's
+            # licence may be held by the person, not by the company.
             return Interpretation(CheckStatus.REVIEW)
-        # No licence at all, or only ended and suspended ones.
+        # Only ended and suspended licences.
         return Interpretation(CheckStatus.FINDING)
 
     def describe(self, status: CheckStatus, raw: dict[str, Any]) -> str:
@@ -649,10 +661,12 @@ def describe(status: CheckStatus, raw: dict[str, Any]) -> str:
             f"GISA lists {len(active)} active licence{'s' if len(active) != 1 else ''} "
             f"for {fn}: {trades}. Please check that they cover the planned work."
         )
-    if status == CheckStatus.FINDING and not found:
+    if status == CheckStatus.REVIEW and not found:
         return (
-            f"GISA lists no business licence for {fn}. Without a licence the partner "
-            "may not carry out a regulated trade; please ask the partner."
+            f"GISA lists no business licence for {fn}. Many companies need none (e.g. "
+            "liberal professions, holdings, agriculture), and the licence of a sole "
+            "trader (e.U.) may be held by the person, not the company. Please check "
+            "whether the planned work needs a licence and ask the partner."
         )
     if status == CheckStatus.FINDING:
         listed = "; ".join(

@@ -45,14 +45,19 @@ not fit are not asked (see the results below). Raise `GISA_TIMEOUT_SECONDS` if r
 |---|---|---|
 | At least one active licence | `OK` | "Active licence" and the list of all licences |
 | Licences, but none active (ended or ruhend) | `FINDING` | "No active licence" and the list |
-| No licence at all: the search answers with an empty hit list (`<GewerbeListe/>`) | `FINDING` | "No licence" |
+| No licence found: the search answers with an empty hit list (`<GewerbeListe/>`) | `REVIEW` | "No licence found": please check whether one is needed |
 | Only licences whose status we cannot read (e.g. `GetGewerbeV2` answers Meldung 1000 "GISA-Zahl nicht gefunden" for a hit) | `REVIEW` | "Please review" |
 | No licence known to be active, and the details of a current licence could not be read for a technical reason (HTTP 4xx/5xx, Meldung 310, timeout, no time left) | `ERROR` | "Error": please try again |
 | No API key, key not found or expired (Meldung 300), missing fields (Meldung 1050), SOAP fault, an answer we do not understand (no XML, no hit list), not reachable, timeout, 429 | `ERROR` | "Error" with the reason |
 
+**No licence found is `REVIEW`, not `FINDING`.** Many companies need no GISA licence at all: liberal
+professions (lawyers, doctors, tax advisers), pure holdings, agriculture. And the licence of a sole trader
+(e.U.) with an FN may be held by the natural person, so the search by FN can find nothing. A red finding would
+be wrong for all of them; the checker decides whether the planned work needs a licence. (This differs from the
+wording of acceptance criterion 3, "no active licence = FINDING"; to be confirmed by the product owner.)
+
 **When in doubt: `ERROR`.** A wrong "this partner has no licence" is worse than "could not check". So "No
-licence" needs GISA's hit list, even if it is empty: an answer without `<GewerbeListe>` is an error, not "no
-licence". A licence whose details failed for a technical reason may well be active, so it makes the result
+licence found" needs GISA's hit list, even if it is empty: an answer without `<GewerbeListe>` is an error. A licence whose details failed for a technical reason may well be active, so it makes the result
 `ERROR` (asked again), unless another licence is already known to be active (`OK`) or the hit list already
 shows that it has ended. Meldung 1000 is only defined for `GetGewerbeV2`; the search knows 300, 1030 and 1050.
 
@@ -63,9 +68,11 @@ entry as a direct child (`<BerechtigungDaten><Berechtigung>`) and older or ended
 (newest first). So:
 
 - no current `<Berechtigung>`, only history → ended;
-- `EndigungDatum` reached → ended;
-- `Ruhend/IstRuhend = true` and `RuhendBis` not reached → suspended;
-- `RechtswirksamAb` reached → active;
+- `EndigungDatum` reached → ended (XML structure file: "Ab diesem Tag ist der Eintrag beendet", so on that
+  day the licence has ended);
+- `Ruhend/IstRuhend = true` and `RuhendBis` not reached → suspended; on the `RuhendBis` day itself → unknown,
+  because the file only says "Ende des Ruhenszeitraumes" (last suspended day or first active one?);
+- `RechtswirksamAb` reached → active ("Ab diesem Tag erlangt der Eintrag Rechtswirksamkeit");
 - otherwise (a search hit without detail, a licence starting in the future) → unknown.
 
 The responsible person is the current `<GeschaeftsfuehrerDaten><Geschaeftsfuehrer>` of the licence itself (not
@@ -90,8 +97,17 @@ sources, in the privacy concept (S9.x), as for the Firmenbuch ([firmenbuch.md](f
 - Get it at <https://www.gisa.gv.at/sst-Neuausstellung> with ID Austria; it is issued at once.
 - The key belongs to **one person**: every query is logged for seven years under that person's name, and the
   people looked up may learn who asked. Use it only for real partner checks, never for mass queries.
-- One valid key per person; it **expires after one year**, and a new key makes the old one invalid.
+- One valid key per person; it **expires after one year**, and a new key makes the old one invalid. After
+  that every GISA check is `ERROR` with "GISA refused our API key (not found or expired …). Please ask the
+  administrator to renew it." `GetApikeyInfo` returns the expiry date (`AblaufDatum`), so a reminder before
+  the expiry is possible (follow-up).
 - Local: `GISA_API_KEY=...` in your own `.env`. Server: only in `deploy.env`. Never in git, issues or chat.
+
+**Open decision (team / product owner): whose key runs on the server?** With one key, all checks of all
+customers run under one team member's name. Options: a key of a person who represents the operator (and
+accepts this), or every customer organisation enters its own key (then its own person is logged; more work:
+keys stored per organisation, encrypted). Also check whether the GISA terms of use allow this use. Until this
+is decided, the server runs **without** `GISA_API_KEY`, so check runs leave GISA out.
 
 **Without a key GISA is not part of check runs** (like the Firmenbuch); the API logs a warning at startup.
 
@@ -118,11 +134,13 @@ company) confirmed:
 
 Still to verify with a few real calls:
 
-1. The answer for an FN without any licence. We expect an empty `<GewerbeListe/>` ("No licence"); if GISA
-   leaves the list out, such a check ends as `ERROR` until `parse_search` is adjusted.
-2. What GISA answers when the quota (200 `GetGewerbeV2` calls per minute) is exceeded: HTTP 429 (asked
+1. The answer for an FN without any licence. We expect an empty `<GewerbeListe/>` ("No licence found"); if
+   GISA leaves the list out, such a check ends as `ERROR` until `parse_search` is adjusted.
+2. A sole trader (e.U.) with an FN: does `SearchPersonJur` find their licences, or are they held by the
+   natural person only (then the result is "No licence found", `REVIEW`)?
+3. What GISA answers when the quota (200 `GetGewerbeV2` calls per minute) is exceeded: HTTP 429 (asked
    again) or a `Meldung` (then add its code to the temporary errors).
-3. How long the calls take for a company with many licences (`GISA_TIMEOUT_SECONDS`).
+4. How long the calls take for a company with many licences (`GISA_TIMEOUT_SECONDS`).
 
 Test with the fake first: `GISA_ADAPTER=fake-ok` or `fake-finding` in `.env`, restart the API, add a partner
 with an FN and click **Check**.

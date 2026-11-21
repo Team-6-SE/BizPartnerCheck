@@ -317,15 +317,17 @@ def test_only_ended_or_suspended_licences_are_a_finding() -> None:
     assert licences(result.raw)[0]["suspendedFrom"] == "2025-01-01"
 
 
-def test_no_licence_at_all_is_a_finding() -> None:
+def test_no_licence_found_needs_a_review_not_a_finding() -> None:
+    # Many companies need no licence (liberal professions, holdings, agriculture).
     adapter, requests = make_adapter(by_operation(search_answer()))
 
     result = adapter.check(SUBJECT)
 
-    assert result.status == CheckStatus.FINDING
+    assert result.status == CheckStatus.REVIEW
     assert result.raw["licences"] == []
     assert len(requests) == 1
     assert "GISA lists no business licence for FN 123456a" in result.explanation
+    assert "Many companies need none" in result.explanation
 
 
 def test_answer_without_hit_list_is_an_error_not_no_licence() -> None:
@@ -485,6 +487,11 @@ def test_an_active_licence_found_in_time_is_enough() -> None:
         ({"start": "2020-01-01"}, ACTIVE),
         ({"start": "2020-01-01", "historic": True}, ENDED),
         ({"start": "2020-01-01", "end": "2026-01-01"}, ENDED),
+        # EndigungDatum: "Ab diesem Tag ist der Eintrag beendet".
+        ({"start": "2020-01-01", "end": "2026-11-19"}, ENDED),
+        ({"start": "2020-01-01", "end": "2026-11-20"}, ACTIVE),
+        # RechtswirksamAb: "Ab diesem Tag erlangt der Eintrag Rechtswirksamkeit".
+        ({"start": "2026-11-19"}, ACTIVE),
         ({"start": "2020-01-01", "end": "2027-01-01"}, ACTIVE),
         ({"start": "2020-01-01", "suspended": True}, SUSPENDED),
         (
@@ -494,6 +501,11 @@ def test_an_active_licence_found_in_time_is_enough() -> None:
         (
             {"start": "2020-01-01", "suspended": True, "suspendedUntil": "2026-01-01"},
             ACTIVE,
+        ),
+        # RuhendBis is only "Ende des Ruhenszeitraumes": unclear on that very day.
+        (
+            {"start": "2020-01-01", "suspended": True, "suspendedUntil": "2026-11-19"},
+            UNKNOWN,
         ),
         ({"start": "2027-01-01"}, UNKNOWN),
         ({}, UNKNOWN),

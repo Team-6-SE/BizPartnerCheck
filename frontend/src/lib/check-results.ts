@@ -88,8 +88,11 @@ export function isStale(check: CheckResult): boolean {
  */
 export function statusLabel(check: CheckResult, labels: Labels = labelsFor(check.source)): string {
   if (check.status === 'FINDING' && check.register_details?.found === false) return 'Not in register'
-  // GISA: "no licence at all" is not the same as "only ended licences".
-  if (check.status === 'FINDING' && check.licences?.length === 0) return 'No licence'
+  // GISA: "no licence found" (many companies need none, REVIEW) is not the same as
+  // "only ended licences" (FINDING). Older results gave FINDING for it.
+  if ((check.status === 'REVIEW' || check.status === 'FINDING') && check.licences?.length === 0) {
+    return 'No licence found'
+  }
   return labels[check.status]
 }
 
