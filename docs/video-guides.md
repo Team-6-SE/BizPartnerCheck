@@ -43,4 +43,6 @@ node scripts/record-guides.mjs settings         # or only some
 ```
 
 The script prints the length of each video (e.g. `check-partner: 21.6 s`). If the first guide says Red Bull GmbH
-already exists, delete the partner first.
+already exists, record with a user of a new organisation (register one at `/register` and set `GUIDE_EMAIL` /
+`GUIDE_PASSWORD`), or start from an empty local database (`docker compose down -v` in `infra`, which removes all
+local data).

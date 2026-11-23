@@ -1,12 +1,11 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { Link } from 'react-router'
-import { Building2Icon, PlusIcon, SearchCheckIcon, Trash2Icon } from 'lucide-react'
+import { Building2Icon, PlusIcon, SearchCheckIcon } from 'lucide-react'
 
 import {
   ApiError,
   archivePartner,
   createPartner,
-  deletePartner,
   listArchivedPartners,
   listPartners,
   partnerLabel,
@@ -22,7 +21,6 @@ import {
   type RunChange,
 } from '@/api/check-runs'
 import { ChangedSince } from '@/components/check-changes'
-import { ConfirmDialog } from '@/components/confirm-dialog'
 import { CheckResultView } from '@/components/check-result'
 import { PageHeader } from '@/components/page-header'
 import {
@@ -52,7 +50,6 @@ import { Input } from '@/components/ui/input'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
 type LoadState = { status: 'loading' } | { status: 'ready' } | { status: 'error'; message: string }
@@ -127,10 +124,6 @@ export function PartnersPage() {
   const [registerError, setRegisterError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [announcement, setAnnouncement] = useState('')
-  // The partner the "Delete" dialog asks about.
-  const [deleting, setDeleting] = useState<Partner | null>(null)
-  const [deleteBusy, setDeleteBusy] = useState(false)
-  const [deleteError, setDeleteError] = useState('')
   const [newPartnerId, setNewPartnerId] = useState<string | null>(null)
 
   // Check runs: which partners are being checked, their sources without a result yet,
@@ -350,22 +343,6 @@ export function PartnersPage() {
       reloadLists()
     } catch (error) {
       setAnnouncement(`Could not archive partner. ${errorMessage(error)}`)
-    }
-  }
-
-  async function handleDelete() {
-    if (!deleting) return
-    setDeleteBusy(true)
-    setDeleteError('')
-    try {
-      await deletePartner(deleting.id)
-      setAnnouncement(`${partnerLabel(deleting)} deleted.`)
-      setDeleting(null)
-      reloadLists()
-    } catch (error) {
-      setDeleteError(errorMessage(error))
-    } finally {
-      setDeleteBusy(false)
     }
   }
 
@@ -719,26 +696,6 @@ export function PartnersPage() {
                                   Edit
                                 </Button>
                                 {archiveButton(partner)}
-                                {/* Quiet until pointed at; the dialog asks before anything is deleted. */}
-                                <Tooltip>
-                                  <TooltipTrigger
-                                    render={
-                                      <Button
-                                        variant="ghost"
-                                        size="icon-sm"
-                                        className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                                        aria-label={`Delete ${partnerLabel(partner)}`}
-                                        onClick={() => {
-                                          setDeleteError('')
-                                          setDeleting(partner)
-                                        }}
-                                      />
-                                    }
-                                  >
-                                    <Trash2Icon />
-                                  </TooltipTrigger>
-                                  <TooltipContent>Delete partner</TooltipContent>
-                                </Tooltip>
                               </div>
                               <Link
                                 to={`/partners/${partner.id}`}
@@ -903,19 +860,6 @@ export function PartnersPage() {
           )}
         </CardContent>
       </Card>
-
-      <ConfirmDialog
-        open={deleting !== null}
-        title={`Delete ${deleting ? partnerLabel(deleting) : 'partner'}?`}
-        confirmLabel="Delete Partner"
-        busy={deleteBusy}
-        error={deleteError}
-        onConfirm={() => void handleDelete()}
-        onCancel={() => setDeleting(null)}
-      >
-        The partner and all its check results are deleted for good. To keep the history, archive the partner
-        instead.
-      </ConfirmDialog>
 
       <p className="sr-only" role="status" aria-live="polite">
         {announcement}

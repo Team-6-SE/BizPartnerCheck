@@ -159,7 +159,7 @@ const GUIDES = {
     await g.caption('Partners are the companies you want to check.', 1800)
     await g.click(page.getByRole('link', { name: 'Partners', exact: true }), 1200)
     if (await page.getByText('ATU33864707').count()) {
-      throw new Error('Red Bull GmbH is already a partner of the demo user: delete it first (see docs/video-guides.md).')
+      throw new Error('Red Bull GmbH is already a partner of this user: use a user of a new organisation (see docs/video-guides.md).')
     }
     await g.caption('Enter the VAT number, the company register number (FN) or both.', 600)
     await g.type(page.getByLabel('VAT number'), 'ATU33864707')
@@ -204,13 +204,6 @@ const GUIDES = {
     await g.caption('GISA: every trade licence, its status and the responsible person.', 3000)
     await g.scrollBy(700, 900)
     await g.caption('The history keeps every result with the time of the check.', 2600)
-    await page.mouse.wheel(0, -4000)
-    await pause(900)
-    await g.caption('Archive keeps the history. Delete removes the partner for good.', 600)
-    await g.click(page.getByRole('button', { name: 'Delete Partner' }), 300)
-    await g.raise()
-    await pause(2600)
-    await g.click(page.getByRole('button', { name: 'Cancel' }), 900)
     await g.caption('')
     await pause(400)
   },

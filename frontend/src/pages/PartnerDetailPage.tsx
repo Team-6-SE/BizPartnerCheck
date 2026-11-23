@@ -1,20 +1,11 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router'
-import { SearchCheckIcon, Trash2Icon } from 'lucide-react'
+import { SearchCheckIcon } from 'lucide-react'
 
 import { startCheckRun, waitForCheckRun, waitingSources, type RunChange } from '@/api/check-runs'
-import {
-  ApiError,
-  deletePartner,
-  getPartner,
-  listPartnerChecks,
-  partnerLabel,
-  type CheckResult,
-  type Partner,
-} from '@/api/partners'
+import { ApiError, getPartner, listPartnerChecks, type CheckResult, type Partner } from '@/api/partners'
 import { ChangedSince, RunChangesSummary } from '@/components/check-changes'
 import { CheckResultView } from '@/components/check-result'
-import { ConfirmDialog } from '@/components/confirm-dialog'
 import { PageHeader } from '@/components/page-header'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -43,22 +34,6 @@ export function PartnerDetailPage() {
   const [waiting, setWaiting] = useState<string[]>([])
   const [changes, setChanges] = useState<RunChange[] | null>(null)
   const [checkError, setCheckError] = useState('')
-  const [confirmDelete, setConfirmDelete] = useState(false)
-  const [deleteBusy, setDeleteBusy] = useState(false)
-  const [deleteError, setDeleteError] = useState('')
-
-  async function handleDelete() {
-    if (!partner) return
-    setDeleteBusy(true)
-    setDeleteError('')
-    try {
-      await deletePartner(partner.id)
-      navigate('/partners', { viewTransition: true })
-    } catch (error) {
-      setDeleteError(error instanceof ApiError ? error.message : 'The partner could not be deleted. Please try again.')
-      setDeleteBusy(false)
-    }
-  }
 
   useEffect(() => {
     if (!partnerId) {
@@ -169,36 +144,11 @@ export function PartnerDetailPage() {
         description="Partner information and stored verification history."
       />
 
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div>
         <Button variant="outline" size="sm" onClick={() => navigate('/partners', { viewTransition: true })}>
           Back to partners
         </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-          onClick={() => {
-            setDeleteError('')
-            setConfirmDelete(true)
-          }}
-        >
-          <Trash2Icon data-icon="inline-start" />
-          Delete Partner
-        </Button>
       </div>
-
-      <ConfirmDialog
-        open={confirmDelete}
-        title={`Delete ${partnerLabel(partner)}?`}
-        confirmLabel="Delete Partner"
-        busy={deleteBusy}
-        error={deleteError}
-        onConfirm={() => void handleDelete()}
-        onCancel={() => setConfirmDelete(false)}
-      >
-        The partner and all its check results are deleted for good. To keep the history, archive the partner
-        instead.
-      </ConfirmDialog>
 
       <Card>
         <CardHeader>

@@ -32,19 +32,6 @@ again. Editing never changes stored check results.
   `PATCH …/restore` brings it back. Nothing is deleted, the check history stays.
 - Archived partners cannot be checked: `409 partner_archived` (the partner exists, so not 404). Restore it first.
 
-## Delete
-
-`DELETE /api/v1/partners/{id}` → `204` removes the partner **and all its check runs and results**, for good. It is
-for partners added by mistake; archiving is the way to keep the history.
-
-- The web app asks first (dialog "Delete …?", Cancel has the focus). In the list it is a quiet trash icon next to
-  Edit and Archive (red only when pointed at, tooltip "Delete partner"); on the partner page "Delete Partner".
-- While a check of the partner is running: `409 check_running`; try again when it has finished.
-- The security log keeps the deletion (`PARTNER_DELETED`: who, when, VAT and register number, number of results),
-  so the evidence that a check happened is gone, but not the fact that someone deleted it.
-- Same rights as archiving: every user of the organisation; another organisation's partner gives
-  `404 partner_not_found` (`tests/test_partner_delete.py`).
-
 ## Partner page
 
 `/partners/{id}` shows the identifiers, the latest result of every source (VIES with registered name, address and

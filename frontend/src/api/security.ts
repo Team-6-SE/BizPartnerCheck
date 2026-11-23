@@ -18,7 +18,6 @@ export const SECURITY_EVENT_TYPES = {
   API_TOKEN_CREATED: 'API token created',
   API_TOKEN_REVOKED: 'API token revoked',
   DATA_EXPORTED: 'Data exported',
-  PARTNER_DELETED: 'Partner deleted',
 } as const
 
 export type SecurityEventType = keyof typeof SECURITY_EVENT_TYPES

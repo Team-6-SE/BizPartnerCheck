@@ -29,11 +29,6 @@ export async function request<T>(path: string, init?: RequestInit, timeoutMs = T
   return (await response.json()) as T
 }
 
-/** Calls the backend for an action without an answer body (e.g. DELETE → 204). */
-export async function requestNoContent(path: string, init?: RequestInit, timeoutMs = TIMEOUT_MS): Promise<void> {
-  await authorizedFetch(path, init, timeoutMs)
-}
-
 /** Downloads a file from the backend (e.g. a CSV export) with the user's token. */
 export async function requestFile(path: string, timeoutMs = TIMEOUT_MS): Promise<{ blob: Blob; filename: string }> {
   const response = await authorizedFetch(path, undefined, timeoutMs)

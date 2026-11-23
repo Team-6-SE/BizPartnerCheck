@@ -5,7 +5,7 @@ Two sources write into the same append-only table `security_events`:
 
 - Keycloak (sign-ins, passwords, second factor, user and role changes), copied by
   app/security/keycloak.py
-- this app (API tokens, exports, deleted partners), through `record_event()`
+- this app (API tokens, exports), through `record_event()`
 
 Details: docs/security-log.md
 """
@@ -38,7 +38,6 @@ class EventType(StrEnum):
     API_TOKEN_CREATED = "API_TOKEN_CREATED"
     API_TOKEN_REVOKED = "API_TOKEN_REVOKED"
     DATA_EXPORTED = "DATA_EXPORTED"
-    PARTNER_DELETED = "PARTNER_DELETED"
 
 
 SOURCE_APP = "app"

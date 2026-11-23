@@ -179,7 +179,7 @@ sequenceDiagram
 | Topic | Decision |
 |---|---|
 | Multi-tenancy | One database, `organization_id` on every business table; enforced in the repository layer (PostgreSQL row-level security as a second line is optional) |
-| Evidence cannot change | Runs/results are append-only: a DB trigger blocks `UPDATE`/`DELETE` on completed runs; SHA-256 over a canonical JSON of the run is stored and printed on the report; notes are a separate table. Exception: deleting a partner removes its runs, and the security log records that ([partner-directory.md](partner-directory.md#delete)) |
+| Evidence cannot change | Runs/results are append-only: a DB trigger blocks `UPDATE`/`DELETE` on completed runs; SHA-256 over a canonical JSON of the run is stored and printed on the report; notes are a separate table |
 | Crash safety | Results are written in one transaction; a startup job marks runs left in `running` as incomplete |
 | Configuration & secrets | Only environment variables / `.env` (never committed); `.env.example` in the repo |
 | Languages | Frontend texts in `react-i18next` JSON files, backend texts (e-mails, PDF, explanations) in gettext/JSON files; German default |

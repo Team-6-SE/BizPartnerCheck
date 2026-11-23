@@ -1,4 +1,4 @@
-import { request, requestNoContent } from './client'
+import { request } from './client'
 
 // Kept here as well, so existing imports from '@/api/partners' keep working.
 export { ApiError } from './client'
@@ -162,14 +162,6 @@ export function archivePartner(partnerId: string): Promise<Partner> {
     `/partners/${encodeURIComponent(partnerId)}/archive`,
     { method: 'PATCH' },
   )
-}
-
-/**
- * Deletes a partner for good, with all its check results (the security log keeps a note).
- * 409 `check_running` while a check of the partner is still running.
- */
-export function deletePartner(partnerId: string): Promise<void> {
-  return requestNoContent(`/partners/${encodeURIComponent(partnerId)}`, { method: 'DELETE' })
 }
 
 // Restores an archived partner to the active directory.
