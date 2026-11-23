@@ -3,9 +3,9 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import asc, desc, func, or_, select
+from sqlalchemy import asc, delete, desc, func, or_, select
 from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -17,7 +17,10 @@ from app.adapters.firmenbuch import get_firmenbuch_adapter
 from app.adapters.gisa import get_gisa_adapter
 from app.adapters.hfu import get_hfu_adapter
 from app.adapters.vies import get_vies_adapter
+from app.auth import AuthenticatedUser
+from app.checks.runs import RUNNING
 from app.db.session import get_db
+from app.security.events import EventType, record_event
 from app.errors import api_error
 from app.partners.register import (
     InvalidRegisterNumber,
@@ -30,7 +33,7 @@ from app.partners.vat import (
     validate_vat_number,
 )
 from app.tenancy import get_current_organization_id
-from app.db.models import CheckResult, Organization, Partner
+from app.db.models import CheckResult, CheckRun, Organization, Partner
 
 router = APIRouter(prefix="/partners", tags=["partners"])
 
@@ -664,6 +667,86 @@ def restore_partner(
     db.refresh(partner)
 
     return partner
+
+
+@router.delete(
+    "/{partner_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        404: {"description": "Partner not found"},
+        409: {"description": "A check of this partner is still running"},
+    },
+)
+def delete_partner(
+    partner_id: uuid.UUID,
+    request: Request,
+    db: DbSession,
+    organization_id: OrganizationId,
+    user: AuthenticatedUser,
+) -> Response:
+    """Delete a partner for good, with all its check results and runs.
+
+    Archiving keeps the history; deleting removes it, so the security log records who
+    deleted which partner and how many results went with it.
+    """
+    partner = db.scalar(
+        select(Partner)
+        .where(Partner.id == partner_id, Partner.organization_id == organization_id)
+        .with_for_update()
+    )
+    if partner is None:
+        raise api_error(
+            status.HTTP_404_NOT_FOUND,
+            "partner_not_found",
+            "This partner does not exist.",
+        )
+
+    running = db.scalar(
+        select(CheckRun.id)
+        .where(CheckRun.partner_id == partner.id, CheckRun.status == RUNNING)
+        .limit(1)
+    )
+    if running is not None:
+        # The worker would still store results for it.
+        raise api_error(
+            status.HTTP_409_CONFLICT,
+            "check_running",
+            "A check of this partner is still running. Delete the partner when it is "
+            "finished.",
+        )
+
+    results = db.scalar(
+        select(func.count())
+        .select_from(CheckResult)
+        .where(CheckResult.partner_id == partner.id)
+    )
+    label = (
+        partner.company_name
+        or partner.vat_number
+        or f"FN {partner.company_register_number or ''}".strip()
+    )
+    db.execute(delete(CheckResult).where(CheckResult.partner_id == partner.id))
+    db.execute(delete(CheckRun).where(CheckRun.partner_id == partner.id))
+    record_event(
+        db,
+        organization_id=organization_id,
+        event_type=EventType.PARTNER_DELETED,
+        actor=user,
+        summary=(
+            f"Partner {label} deleted with {results} check "
+            f"{'result' if results == 1 else 'results'}"
+        ),
+        ip_address=request.client.host if request.client else None,
+        details={
+            "partner_id": str(partner.id),
+            "vat_number": partner.vat_number,
+            "company_register_number": partner.company_register_number,
+            "check_results": results,
+        },
+    )
+    db.delete(partner)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(

@@ -16,7 +16,7 @@ export function SignInPage() {
   if (auth.isAuthenticated) {
     return (
       <FullPageMessage title="You Are Signed In" description={auth.user?.profile.email}>
-        <Button className="w-full" nativeButton={false} render={<Link to="/" />}>
+        <Button className="w-full" nativeButton={false} render={<Link to="/" viewTransition />}>
           Go to the App
           <ArrowRightIcon data-icon="inline-end" />
         </Button>
@@ -51,7 +51,7 @@ export function SignInPage() {
       )}
       <p className="text-center text-sm text-muted-foreground">
         New to BizPartnerCheck?{' '}
-        <Link to="/register" className="text-foreground underline underline-offset-4 hover:text-primary">
+        <Link to="/register" viewTransition className="text-foreground underline underline-offset-4 hover:text-primary">
           Register your company
         </Link>
       </p>

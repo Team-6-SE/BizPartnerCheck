@@ -53,7 +53,7 @@ sequenceDiagram
 | Access token | 5 minutes; renewed in the background with the refresh token | Short-lived tokens limit the damage of a leaked token |
 | Session idle / max | 30 minutes / 10 hours | T2.1.5 |
 | Password reset link | valid 30 minutes | T2.1.4 |
-| Languages | English and German (follows the browser) | NFR-17 |
+| Languages | English and German: the language chosen on the registration page (remembered in the browser, sent as `ui_locales`), otherwise the browser's | NFR-17 |
 | E-mail | SMTP `mailpit:1025` (local only) | Reset mails are visible at http://localhost:8025 |
 | Second factor | one-time code from an authenticator app: required for role `org-admin`, optional for others | NFR-11, see security-log.md |
 | Events | sign-in and admin events stored 30 days, copied into our security log | NFR-08, see security-log.md |
@@ -64,7 +64,9 @@ sequenceDiagram
 The sign-in, "forgot password" and "new password" pages are Keycloak's own pages (that is what keeps
 passwords out of our code). The theme `bizpartnercheck` only adds CSS (and one tiny script) on top of Keycloak's default theme
 (`keycloak.v2`, PatternFly 5): our logo, the Geist font, the neutral shadcn colours from
-`frontend/src/index.css`, the same radius and light/dark mode following the operating system.
+`frontend/src/index.css`, the same radius, always light like the app's default (`darkMode=false`). The
+layout matches the app's own pages outside the app (`FullPageMessage`): logo and name above the card, the title
+on the left, the language choice on the right.
 
 - Files: `theme.properties` (parent theme, list of CSS and script files), `resources/css/bizpartnercheck.css`
   and `resources/js/otp-input.js` (accepts one-time codes typed as "123 456", see security-log.md);

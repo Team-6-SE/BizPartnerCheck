@@ -1,5 +1,7 @@
 import { UserManager, WebStorageStateStore } from 'oidc-client-ts'
 
+import { preferredLanguage } from '@/lib/language'
+
 /**
  * Sign-in with Keycloak (OpenID Connect, authorization code flow with PKCE).
  *
@@ -26,8 +28,6 @@ export const userManager = new UserManager({
   redirect_uri: `${origin}/auth/callback`,
   post_logout_redirect_uri: `${origin}/sign-in?signed_out=1`,
   scope: 'openid profile email',
-  // Keycloak's sign-in page in the browser's language (German or English).
-  ui_locales: navigator.language.toLowerCase().startsWith('de') ? 'de' : 'en',
   // Tokens stay in this tab only and are gone when it is closed.
   userStore: new WebStorageStateStore({ store: window.sessionStorage }),
   // The access token lives 5 minutes; renew it in the background with the refresh token.
@@ -43,10 +43,13 @@ export function currentPath(): string {
   return window.location.pathname + window.location.search + window.location.hash
 }
 
-/** Go to Keycloak's sign-in page; afterwards come back to `returnTo`. */
+/**
+ * Go to Keycloak's sign-in page; afterwards come back to `returnTo`. Keycloak shows the
+ * language chosen on the registration page, or the browser's language (German or English).
+ */
 export function signIn(returnTo: string = currentPath()): Promise<void> {
   const state: SignInState = { returnTo: safeReturnPath(returnTo) }
-  return userManager.signinRedirect({ state })
+  return userManager.signinRedirect({ state, ui_locales: preferredLanguage() })
 }
 
 /** Only paths inside this app, never another site ("//evil.example" or "https://…"). */

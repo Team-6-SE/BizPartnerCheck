@@ -1,11 +1,12 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { Link } from 'react-router'
-import { Building2Icon, PlusIcon, SearchCheckIcon } from 'lucide-react'
+import { Building2Icon, PlusIcon, SearchCheckIcon, Trash2Icon } from 'lucide-react'
 
 import {
   ApiError,
   archivePartner,
   createPartner,
+  deletePartner,
   listArchivedPartners,
   listPartners,
   partnerLabel,
@@ -21,6 +22,7 @@ import {
   type RunChange,
 } from '@/api/check-runs'
 import { ChangedSince } from '@/components/check-changes'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { CheckResultView } from '@/components/check-result'
 import { PageHeader } from '@/components/page-header'
 import {
@@ -50,6 +52,7 @@ import { Input } from '@/components/ui/input'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
 type LoadState = { status: 'loading' } | { status: 'ready' } | { status: 'error'; message: string }
@@ -124,6 +127,10 @@ export function PartnersPage() {
   const [registerError, setRegisterError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [announcement, setAnnouncement] = useState('')
+  // The partner the "Delete" dialog asks about.
+  const [deleting, setDeleting] = useState<Partner | null>(null)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
   const [newPartnerId, setNewPartnerId] = useState<string | null>(null)
 
   // Check runs: which partners are being checked, their sources without a result yet,
@@ -346,6 +353,22 @@ export function PartnersPage() {
     }
   }
 
+  async function handleDelete() {
+    if (!deleting) return
+    setDeleteBusy(true)
+    setDeleteError('')
+    try {
+      await deletePartner(deleting.id)
+      setAnnouncement(`${partnerLabel(deleting)} deleted.`)
+      setDeleting(null)
+      reloadLists()
+    } catch (error) {
+      setDeleteError(errorMessage(error))
+    } finally {
+      setDeleteBusy(false)
+    }
+  }
+
   async function handleRestore(partner: Partner) {
     try {
       await restorePartner(partner.id)
@@ -395,7 +418,7 @@ export function PartnersPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Partners"
-        description="Add a partner by its VAT number or company register number and check it with the EU VIES service, the BMF list of fake companies and the ÖGK HFU list."
+        description="Add a partner by its VAT number or company register number and check it against VIES, the BMF and HFU lists, the Firmenbuch and GISA."
       />
 
       <Card>
@@ -684,7 +707,7 @@ export function PartnersPage() {
                                   {dateFormat.format(new Date(partner.created_at))}
                                 </time>
                               </div>
-                              <div className="flex flex-wrap gap-2">
+                              <div className="flex flex-wrap items-center gap-2">
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -696,9 +719,30 @@ export function PartnersPage() {
                                   Edit
                                 </Button>
                                 {archiveButton(partner)}
+                                {/* Quiet until pointed at; the dialog asks before anything is deleted. */}
+                                <Tooltip>
+                                  <TooltipTrigger
+                                    render={
+                                      <Button
+                                        variant="ghost"
+                                        size="icon-sm"
+                                        className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                        aria-label={`Delete ${partnerLabel(partner)}`}
+                                        onClick={() => {
+                                          setDeleteError('')
+                                          setDeleting(partner)
+                                        }}
+                                      />
+                                    }
+                                  >
+                                    <Trash2Icon />
+                                  </TooltipTrigger>
+                                  <TooltipContent>Delete partner</TooltipContent>
+                                </Tooltip>
                               </div>
                               <Link
                                 to={`/partners/${partner.id}`}
+                                viewTransition
                                 className="text-sm font-medium underline underline-offset-4 hover:text-primary"
                               >
                                 View details
@@ -728,7 +772,7 @@ export function PartnersPage() {
                             onCheck={handleCheck}
                           />
                         </TableCell>
-                        <TableCell className="min-w-44 align-top whitespace-normal">
+                        <TableCell className="min-w-32 align-top whitespace-normal">
                           {waiting.includes('VIES') ? (
                             <WaitingForSource />
                           ) : check ? (
@@ -751,7 +795,7 @@ export function PartnersPage() {
                             </p>
                           ))}
                         </TableCell>
-                        <TableCell className="min-w-52 align-top whitespace-normal">
+                        <TableCell className="min-w-36 align-top whitespace-normal">
                           {waiting.includes('BMF') ? (
                             <WaitingForSource />
                           ) : bmfCheck ? (
@@ -767,7 +811,7 @@ export function PartnersPage() {
                             <span className="text-muted-foreground">Not checked yet</span>
                           )}
                         </TableCell>
-                        <TableCell className="min-w-52 align-top whitespace-normal">
+                        <TableCell className="min-w-36 align-top whitespace-normal">
                           {waiting.includes('HFU') ? (
                             <WaitingForSource />
                           ) : hfuCheck ? (
@@ -785,7 +829,7 @@ export function PartnersPage() {
                             <span className="text-muted-foreground">No VAT number, HFU does not apply</span>
                           )}
                         </TableCell>
-                        <TableCell className="min-w-52 align-top whitespace-normal">
+                        <TableCell className="min-w-36 align-top whitespace-normal">
                           {waiting.includes('FIRMENBUCH') ? (
                             <WaitingForSource />
                           ) : registerCheck ? (
@@ -803,7 +847,7 @@ export function PartnersPage() {
                             <span className="text-muted-foreground">No FN, Firmenbuch does not apply</span>
                           )}
                         </TableCell>
-                        <TableCell className="min-w-52 align-top whitespace-normal">
+                        <TableCell className="min-w-36 align-top whitespace-normal">
                           {waiting.includes('GISA') ? (
                             <WaitingForSource />
                           ) : gisaCheck ? (
@@ -859,6 +903,19 @@ export function PartnersPage() {
           )}
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={deleting !== null}
+        title={`Delete ${deleting ? partnerLabel(deleting) : 'partner'}?`}
+        confirmLabel="Delete Partner"
+        busy={deleteBusy}
+        error={deleteError}
+        onConfirm={() => void handleDelete()}
+        onCancel={() => setDeleting(null)}
+      >
+        The partner and all its check results are deleted for good. To keep the history, archive the partner
+        instead.
+      </ConfirmDialog>
 
       <p className="sr-only" role="status" aria-live="polite">
         {announcement}

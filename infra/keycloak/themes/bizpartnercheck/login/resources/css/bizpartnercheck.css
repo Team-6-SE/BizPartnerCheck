@@ -1,7 +1,7 @@
 /*
  * BizPartnerCheck look for Keycloak's sign-in pages.
- * Colours, radius and font follow frontend/src/index.css (shadcn/ui, neutral) so the
- * sign-in feels like part of the app. Light/dark follows the operating system.
+ * Colours, radius and font follow frontend/src/index.css and the landing page (light, cool
+ * mist, indigo) so the sign-in feels like part of the app. Always light, like the app's default.
  */
 
 @font-face {
@@ -27,20 +27,20 @@
 /* ---------------------------------------------------------------- tokens */
 
 :root {
-  --bpc-page: oklch(0.985 0 0);
-  --bpc-card: oklch(1 0 0);
-  --bpc-foreground: oklch(0.145 0 0);
-  --bpc-muted-foreground: oklch(0.556 0 0);
-  --bpc-border: oklch(0.922 0 0);
-  --bpc-input: oklch(0.922 0 0);
+  --bpc-page: #e9ebfa;
+  --bpc-card: oklch(1 0 0 / 0.86);
+  --bpc-foreground: oklch(0.22 0.04 278);
+  --bpc-muted-foreground: oklch(0.52 0.03 278);
+  --bpc-border: oklch(0.915 0.014 278);
+  --bpc-input: oklch(0.9 0.016 278);
   --bpc-input-bg: oklch(1 0 0);
-  --bpc-primary: oklch(0.205 0 0);
-  --bpc-primary-hover: oklch(0.205 0 0 / 0.85);
-  --bpc-primary-foreground: oklch(0.985 0 0);
-  --bpc-accent: oklch(0.97 0 0);
-  --bpc-ring: oklch(0.708 0 0);
-  --bpc-destructive: oklch(0.577 0.245 27.325);
-  --bpc-radius: 0.625rem;
+  --bpc-primary: oklch(0.52 0.22 277);
+  --bpc-primary-hover: oklch(0.47 0.22 277);
+  --bpc-primary-foreground: oklch(0.99 0 0);
+  --bpc-accent: oklch(0.955 0.02 278);
+  --bpc-ring: oklch(0.62 0.17 277);
+  --bpc-destructive: oklch(0.577 0.215 27.3);
+  --bpc-radius: 0.75rem;
   --bpc-font: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
 
   /* PatternFly tokens used by Keycloak's pages */
@@ -79,15 +79,20 @@
 
 html.login-pf,
 .login-pf body {
-  background: var(--bpc-page);
+  /* The mist of the landing page. */
+  background:
+    radial-gradient(45% 50% at 20% 22%, rgb(255 255 255 / 0.95) 0%, rgb(255 255 255 / 0) 70%),
+    radial-gradient(55% 70% at 96% 18%, #c7cbf2 0%, rgb(199 203 242 / 0) 70%),
+    radial-gradient(60% 50% at 85% 85%, #d3d6f5 0%, rgb(211 214 245 / 0) 70%),
+    linear-gradient(180deg, #eceefb 0%, #dde0f7 100%) fixed;
   color: var(--bpc-foreground);
   font-family: var(--bpc-font);
   -webkit-font-smoothing: antialiased;
 }
 
 .pf-v5-c-login {
-  --pf-v5-c-login--BackgroundColor: var(--bpc-page);
-  background: var(--bpc-page);
+  --pf-v5-c-login--BackgroundColor: transparent;
+  background: transparent;
 }
 
 .pf-v5-c-login__container {
@@ -121,9 +126,12 @@ html.login-pf,
 .pf-v5-c-login__main {
   --pf-v5-c-login__main--BackgroundColor: var(--bpc-card);
   background: var(--bpc-card);
-  border: 1px solid var(--bpc-border);
-  border-radius: calc(var(--bpc-radius) * 1.4);
-  box-shadow: 0 1px 2px oklch(0 0 0 / 5%);
+  border: 1px solid #ffffff;
+  border-radius: calc(var(--bpc-radius) * 1.6);
+  box-shadow:
+    0 30px 80px rgb(70 74 190 / 0.14),
+    inset 0 1px 0 #ffffff;
+  backdrop-filter: blur(16px);
   overflow: hidden;
 }
 

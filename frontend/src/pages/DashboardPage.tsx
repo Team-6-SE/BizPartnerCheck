@@ -36,7 +36,7 @@ export function DashboardPage() {
         title="Dashboard"
         description="Start a new partner check and see your latest results."
         actions={
-          <Button nativeButton={false} render={<Link to="/checks/new" />}>
+          <Button nativeButton={false} render={<Link to="/checks/new" viewTransition />}>
             <SearchCheckIcon data-icon="inline-start" />
             New Check
           </Button>
@@ -58,7 +58,7 @@ export function DashboardPage() {
             )}
           </CardContent>
           <CardFooter>
-            <Button variant="link" size="sm" className="px-0" nativeButton={false} render={<Link to="/partners" />}>
+            <Button variant="link" size="sm" className="px-0" nativeButton={false} render={<Link to="/partners" viewTransition />}>
               Manage Partners
               <ArrowRightIcon data-icon="inline-end" />
             </Button>

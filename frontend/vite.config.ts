@@ -18,6 +18,11 @@ export default defineConfig({
       '/api': 'http://localhost:8000',
     },
   },
+  build: {
+    // three.js (the glass cube of the landing page) is one chunk of about 500 kB (130 kB gzip). It is
+    // loaded only when the landing page shows, so it does not slow down the app (docs/landing-page.md).
+    chunkSizeWarningLimit: 520,
+  },
   test: {
     // Unit tests next to the code (*.test.ts). The Playwright tests in e2e/ run separately.
     include: ['src/**/*.test.{ts,tsx}'],

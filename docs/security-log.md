@@ -104,6 +104,7 @@ API checks every request itself.
 | `ROLE_ASSIGNED` / `ROLE_REMOVED` | Role org-admin given to / taken from … | Admin events `REALM_ROLE_MAPPING`, `CLIENT_ROLE_MAPPING` |
 | `API_TOKEN_CREATED` / `API_TOKEN_REVOKED` | (S5.x calls `record_event`) | The app |
 | `DATA_EXPORTED` | Security log exported (n entries) | The app (every CSV export) |
+| `PARTNER_DELETED` | Partner … deleted with n check results (VAT and register number in the details) | The app (`DELETE /api/v1/partners/{id}`) |
 
 Every entry has: time (`occurred_at`), event type, actor (who did it: Keycloak user ID and e-mail), subject
 (whom it concerns, e.g. the user who got a role), IP address, source (`keycloak` / `app`) and details (JSON, with
