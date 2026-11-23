@@ -49,72 +49,74 @@
 }
 
 :root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
+    /* BizPartnerCheck light: white surfaces, cool mist, indigo from the landing page. */
+    --background: oklch(0.992 0.003 275);
+    --foreground: oklch(0.22 0.04 278);
     --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
+    --card-foreground: oklch(0.22 0.04 278);
     --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --radius: 0.625rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
+    --popover-foreground: oklch(0.22 0.04 278);
+    --primary: oklch(0.52 0.22 277);
+    --primary-foreground: oklch(0.99 0 0);
+    --secondary: oklch(0.965 0.012 278);
+    --secondary-foreground: oklch(0.3 0.06 278);
+    --muted: oklch(0.967 0.008 278);
+    --muted-foreground: oklch(0.52 0.03 278);
+    --accent: oklch(0.955 0.02 278);
+    --accent-foreground: oklch(0.3 0.08 278);
+    --destructive: oklch(0.577 0.215 27.3);
+    --border: oklch(0.915 0.014 278);
+    --input: oklch(0.9 0.016 278);
+    --ring: oklch(0.62 0.17 277);
+    --chart-1: oklch(0.52 0.22 277);
+    --chart-2: oklch(0.66 0.15 277);
+    --chart-3: oklch(0.78 0.09 277);
+    --chart-4: oklch(0.62 0.14 160);
+    --chart-5: oklch(0.7 0.15 60);
+    --radius: 0.75rem;
+    --sidebar: oklch(0.975 0.008 278);
+    --sidebar-foreground: oklch(0.25 0.04 278);
+    --sidebar-primary: oklch(0.52 0.22 277);
+    --sidebar-primary-foreground: oklch(0.99 0 0);
+    --sidebar-accent: oklch(0.93 0.03 278);
+    --sidebar-accent-foreground: oklch(0.28 0.1 278);
+    --sidebar-border: oklch(0.92 0.014 278);
+    --sidebar-ring: oklch(0.62 0.17 277);
 }
 
 .dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
+    /* Night version of the same palette: deep indigo instead of grey. */
+    --background: oklch(0.17 0.025 278);
+    --foreground: oklch(0.96 0.01 278);
+    --card: oklch(0.205 0.03 278);
+    --card-foreground: oklch(0.96 0.01 278);
+    --popover: oklch(0.22 0.03 278);
+    --popover-foreground: oklch(0.96 0.01 278);
+    --primary: oklch(0.7 0.15 277);
+    --primary-foreground: oklch(0.18 0.04 278);
+    --secondary: oklch(0.27 0.035 278);
+    --secondary-foreground: oklch(0.96 0.01 278);
+    --muted: oklch(0.26 0.03 278);
+    --muted-foreground: oklch(0.72 0.03 278);
+    --accent: oklch(0.29 0.05 278);
+    --accent-foreground: oklch(0.96 0.01 278);
     --destructive: oklch(0.704 0.191 22.216);
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0 0);
+    --ring: oklch(0.6 0.13 277);
+    --chart-1: oklch(0.7 0.15 277);
+    --chart-2: oklch(0.6 0.12 277);
+    --chart-3: oklch(0.5 0.09 277);
+    --chart-4: oklch(0.65 0.13 160);
+    --chart-5: oklch(0.72 0.14 60);
+    --sidebar: oklch(0.19 0.028 278);
+    --sidebar-foreground: oklch(0.94 0.01 278);
+    --sidebar-primary: oklch(0.7 0.15 277);
+    --sidebar-primary-foreground: oklch(0.18 0.04 278);
+    --sidebar-accent: oklch(0.28 0.05 278);
+    --sidebar-accent-foreground: oklch(0.96 0.01 278);
+    --sidebar-border: oklch(1 0 0 / 9%);
+    --sidebar-ring: oklch(0.6 0.13 277);
 }
 
 @layer base {
@@ -156,5 +158,256 @@
     from {
       background-color: var(--color-muted);
     }
+  }
+}
+
+/*
+ * Page transitions (View Transitions API, started by React Router's `viewTransition` on the
+ * page links). Browsers without the API switch pages at once.
+ *
+ * Inside the app (the destination has the app shell, `#main`): only the page content changes,
+ * quickly (about 0.2 s); sidebar and header stay where they are.
+ */
+#main {
+  view-transition-name: page;
+}
+
+::view-transition-group(root),
+:root:has(#main)::view-transition-old(root),
+:root:has(#main)::view-transition-new(root) {
+  animation: none;
+}
+
+::view-transition-group(page) {
+  animation-duration: 200ms;
+  animation-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+::view-transition-old(page) {
+  animation: page-out 90ms ease-out both;
+}
+
+::view-transition-new(page) {
+  animation: page-in 200ms cubic-bezier(0.23, 1, 0.32, 1) 30ms both;
+}
+
+@keyframes page-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/*
+ * Between the public pages (landing page, registration, sign-in): a curtain in the accent colour
+ * rises from the bottom with an arched top edge, covers the screen, the page changes behind it,
+ * and the curtain moves on upwards, uncovering the new page from below (its lower edge arched the
+ * same way).
+ *
+ * The browser shows a picture of the old page and the live new page; the old one is hidden below
+ * the arch with a mask, the new one shown below the arch with a clip-path, and the curtain is
+ * simply the background between them. Both arches are the top of one large ellipse (radii 100 %
+ * of the width, 134 % of the height), so the middle leads and the sides trail by 18 % of the
+ * screen height.
+ */
+@property --curtain-y {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: 234%;
+}
+
+:root:not(:has(#main))::view-transition-image-pair(root) {
+  background: linear-gradient(to top, color-mix(in oklch, var(--primary) 86%, black), var(--primary) 70%);
+}
+
+:root:not(:has(#main))::view-transition-old(root),
+:root:not(:has(#main))::view-transition-new(root) {
+  mix-blend-mode: normal;
+  animation-duration: 800ms;
+  animation-fill-mode: both;
+}
+
+/* The old page: visible outside the ellipse, i.e. above the arch; drifts up a little. */
+:root:not(:has(#main))::view-transition-old(root) {
+  mask-image: radial-gradient(100% 134% at 50% var(--curtain-y), transparent 99.7%, #000 100%);
+  animation-name: curtain-cover;
+}
+
+/* The new page: visible inside the ellipse, i.e. below the arch; comes up from a little lower. */
+:root:not(:has(#main))::view-transition-new(root) {
+  animation-name: curtain-uncover;
+}
+
+@keyframes curtain-cover {
+  from {
+    --curtain-y: 234%;
+    object-position: 0 0;
+    animation-timing-function: cubic-bezier(0.45, 0, 0.2, 1);
+  }
+  44%,
+  to {
+    --curtain-y: 110%;
+    object-position: 0 -6vh;
+  }
+}
+
+@keyframes curtain-uncover {
+  from,
+  52% {
+    clip-path: ellipse(100% 134% at 50% 234%);
+    object-position: 0 9vh;
+    animation-timing-function: cubic-bezier(0.65, 0, 0.25, 1);
+  }
+  to {
+    clip-path: ellipse(100% 134% at 50% 110%);
+    object-position: 0 0;
+  }
+}
+
+/* "Reduce motion": no curtain and no movement, the new page just fades in over the old one. */
+@media (prefers-reduced-motion: reduce) {
+  :root:not(:has(#main))::view-transition-image-pair(root) {
+    background: none;
+  }
+  :root:not(:has(#main))::view-transition-old(root),
+  ::view-transition-old(page) {
+    mask-image: none;
+    animation: none;
+  }
+  :root:not(:has(#main))::view-transition-new(root),
+  ::view-transition-new(page) {
+    animation: page-fade 140ms ease-out both;
+  }
+  @keyframes page-fade {
+    from {
+      opacity: 0;
+    }
+  }
+}
+
+/* Video guide player: a native <dialog> that fades and scales in from the centre. */
+.guide-player {
+  opacity: 1;
+  transform: scale(1);
+  transition:
+    opacity 220ms cubic-bezier(0.23, 1, 0.32, 1),
+    transform 220ms cubic-bezier(0.23, 1, 0.32, 1),
+    overlay 220ms allow-discrete,
+    display 220ms allow-discrete;
+}
+
+.guide-player:not([open]) {
+  opacity: 0;
+  transform: scale(0.96);
+}
+
+@starting-style {
+  .guide-player[open] {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+.guide-player::backdrop {
+  background: oklch(0.2 0.05 278 / 0.55);
+  backdrop-filter: blur(4px);
+}
+
+/* Video guides: the next video slides in from the side it comes from. */
+@media (prefers-reduced-motion: no-preference) {
+  .guide-slide[data-direction='next'] {
+    animation: guide-from-right 320ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  }
+  .guide-slide[data-direction='previous'] {
+    animation: guide-from-left 320ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  }
+}
+
+@keyframes guide-from-right {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+}
+
+@keyframes guide-from-left {
+  from {
+    opacity: 0;
+    transform: translateX(-28px);
+  }
+}
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* Sign-in, registration and other pages outside the app: the mist of the landing page. */
+.auth-mist {
+  background:
+    radial-gradient(45% 50% at 20% 22%, rgb(255 255 255 / 0.95) 0%, rgb(255 255 255 / 0) 70%),
+    radial-gradient(55% 70% at 96% 18%, #c7cbf2 0%, rgb(199 203 242 / 0) 70%),
+    radial-gradient(60% 50% at 85% 85%, #d3d6f5 0%, rgb(211 214 245 / 0) 70%),
+    linear-gradient(180deg, #eceefb 0%, #dde0f7 100%);
+}
+
+.dark .auth-mist {
+  background:
+    radial-gradient(50% 50% at 25% 20%, oklch(0.3 0.06 278 / 0.7) 0%, transparent 70%),
+    linear-gradient(180deg, oklch(0.19 0.03 278) 0%, oklch(0.15 0.025 278) 100%);
+}
+
+.auth-card {
+  background: oklch(1 0 0 / 0.84);
+  border: 1px solid #ffffff;
+  box-shadow:
+    0 30px 80px rgb(70 74 190 / 0.14),
+    inset 0 1px 0 #ffffff;
+  backdrop-filter: blur(16px);
+}
+
+/* Same room inside the card as on Keycloak's sign-in page. */
+.auth-card {
+  padding-block: 1.75rem;
+  gap: 1.25rem;
+}
+
+.auth-card > [data-slot='card-header'],
+.auth-card > [data-slot='card-content'] {
+  padding-inline: clamp(1.25rem, 6vw, 2.25rem);
+}
+
+/* The language choice in the card header: like the one on Keycloak's sign-in page. */
+.auth-language select {
+  height: 2.25rem;
+  padding-left: 0.75rem;
+  padding-right: 2.25rem;
+  border-radius: calc(var(--radius) * 0.8);
+  font-size: 0.9375rem;
+  background: var(--background);
+}
+
+.auth-language [data-slot='native-select-icon'] {
+  right: 0.75rem;
+  color: var(--foreground);
+}
+
+.dark .auth-card {
+  background: oklch(0.22 0.03 278 / 0.85);
+  border-color: oklch(1 0 0 / 0.1);
+  box-shadow: 0 30px 80px oklch(0 0 0 / 0.35);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .auth-card {
+    animation: panel-in 420ms cubic-bezier(0.23, 1, 0.32, 1) both;
   }
 }

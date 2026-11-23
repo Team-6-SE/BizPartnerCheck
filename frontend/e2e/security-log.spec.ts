@@ -2,6 +2,13 @@ import { expect, test, type Page } from '@playwright/test'
 
 import { msUntilNextCode, totpCode } from './totp'
 
+// The video guides open over the app on a user's first visit; close them whenever they are in the way.
+test.beforeEach(async ({ page }) => {
+  await page.addLocatorHandler(page.getByRole('dialog', { name: 'Welcome to BizPartnerCheck' }), async () => {
+    await page.getByRole('button', { name: 'Close the video guides' }).click()
+  })
+})
+
 // Demo accounts from infra/keycloak/import/bizpartnercheck-realm.json (local development only).
 const ADMIN_EMAIL = 'admin@bizpartnercheck.local'
 const ADMIN_PASSWORD = 'Admin-Password-2026'
@@ -100,9 +107,9 @@ test('an org admin must use an authenticator app and sees the security log', asy
 })
 
 test('other users sign in without a code and cannot open the security log', async ({ page }) => {
-  await page.goto('/')
+  await page.goto('/partners')
   await submitCredentials(page, USER_EMAIL, USER_PASSWORD)
-  await expect(page).toHaveURL('/')
+  await expect(page).toHaveURL('/partners')
   await expect(page.getByRole('link', { name: 'Security Log' })).toHaveCount(0)
 
   await page.goto('/settings/security-log')

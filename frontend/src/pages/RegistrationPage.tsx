@@ -1,13 +1,13 @@
 import { useState } from 'react'
-import { Link } from 'react-router'
 import { ApiError } from '@/api/client'
 
+import { signIn } from '@/auth/oidc'
 import { FullPageMessage } from '@/components/full-page-message'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-
-type Language = 'en' | 'de'
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
+import { LANGUAGES, preferredLanguage, setPreferredLanguage, type Language } from '@/lib/language'
 
 type FormValues = {
   companyName: string
@@ -36,7 +36,9 @@ const translations = {
     vat: 'VAT number (optional)',
     submit: 'Create Account',
     submitting: 'Creating account…',
-    signIn: 'Already have an account? Sign in',
+    haveAccount: 'Already have an account?',
+    signIn: 'Sign in',
+    signInUnreachable: 'The sign-in service cannot be reached right now. Please try again in a moment.',
     successTitle: 'Check Your E-Mail',
     successHint: 'Open the link in the e-mail to confirm your address and set your password. Then you can sign in.',
     duplicateVat: 'An organisation with this VAT number is already registered.',
@@ -57,7 +59,9 @@ const translations = {
     vat: 'Umsatzsteuer-ID (optional)',
     submit: 'Konto erstellen',
     submitting: 'Konto wird erstellt…',
-    signIn: 'Sie haben bereits ein Konto? Anmelden',
+    haveAccount: 'Sie haben bereits ein Konto?',
+    signIn: 'Anmelden',
+    signInUnreachable: 'Der Anmeldedienst ist gerade nicht erreichbar. Bitte versuchen Sie es gleich noch einmal.',
     successTitle: 'Bitte prüfen Sie Ihre E-Mails',
     successHint: 'Öffnen Sie den Link in der E-Mail, um Ihre Adresse zu bestätigen und Ihr Passwort festzulegen. Danach können Sie sich anmelden.',
     duplicateVat: 'Eine Organisation mit dieser UID-Nummer ist bereits registriert.',
@@ -72,7 +76,8 @@ const translations = {
 }
 
 export function RegistrationPage() {
-  const [language, setLanguage] = useState<Language>('en')
+  const [language, setLanguage] = useState<Language>(preferredLanguage)
+  const [signInFailed, setSignInFailed] = useState(false)
   const [values, setValues] = useState<FormValues>({
     companyName: '',
     adminName: '',
@@ -92,6 +97,38 @@ export function RegistrationPage() {
   const [registered, setRegistered] = useState(false)
 
   const t = translations[language]
+
+  function chooseLanguage(next: Language) {
+    setLanguage(next)
+    // Keycloak's sign-in page opens in the same language later.
+    setPreferredLanguage(next)
+  }
+
+  // Straight to Keycloak's sign-in page (no page of our own in between).
+  function startSignIn() {
+    setSignInFailed(false)
+    signIn('/').catch(() => setSignInFailed(true))
+  }
+
+  const signInLink = (
+    <div className="flex flex-col gap-2">
+      <p className="text-center text-sm text-muted-foreground">
+        {t.haveAccount}{' '}
+        <button
+          type="button"
+          onClick={startSignIn}
+          className="text-foreground underline underline-offset-4 hover:text-primary"
+        >
+          {t.signIn}
+        </button>
+      </p>
+      {signInFailed && (
+        <p role="alert" className="text-center text-sm text-destructive">
+          {t.signInUnreachable}
+        </p>
+      )}
+    </div>
+  )
 
   function validate(): boolean {
     const newErrors: FormErrors = {}
@@ -176,37 +213,39 @@ async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
         <p role="status" className="text-center text-sm text-muted-foreground">
           {t.successHint}
         </p>
-        <Link to="/sign-in" className="text-sm underline underline-offset-4 hover:text-primary">
+        <Button className="w-full" onClick={startSignIn}>
           {t.signIn}
-        </Link>
+        </Button>
+        {signInFailed && (
+          <p role="alert" className="text-center text-sm text-destructive">
+            {t.signInUnreachable}
+          </p>
+        )}
       </FullPageMessage>
     )
   }
 
   return (
-    <FullPageMessage title={t.title} description={t.description}>
+    <FullPageMessage
+      title={t.title}
+      description={t.description}
+      action={
+        // Looks and sits like the language choice on Keycloak's sign-in page.
+        <NativeSelect
+          className="auth-language shrink-0"
+          aria-label={t.language}
+          value={language}
+          onChange={(event) => chooseLanguage(event.target.value as Language)}
+        >
+          {LANGUAGES.map((option) => (
+            <NativeSelectOption key={option.value} value={option.value}>
+              {option.label}
+            </NativeSelectOption>
+          ))}
+        </NativeSelect>
+      }
+    >
       <div className="w-full space-y-4">
-        <div className="flex items-center justify-end gap-2 text-sm">
-          <span>{t.language}:</span>
-          <button
-            type="button"
-            onClick={() => setLanguage('en')}
-            aria-pressed={language === 'en'}
-            className={language === 'en' ? 'font-bold underline' : 'hover:underline'}
-          >
-            English
-          </button>
-          <span aria-hidden="true">|</span>
-          <button
-            type="button"
-            onClick={() => setLanguage('de')}
-            aria-pressed={language === 'de'}
-            className={language === 'de' ? 'font-bold underline' : 'hover:underline'}
-          >
-            Deutsch
-          </button>
-        </div>
-
         <form onSubmit={handleSubmit} noValidate className="space-y-4">
             <div
                 className="absolute -left-[10000px] h-px w-px overflow-hidden"
@@ -299,12 +338,8 @@ async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
           )}
         </form>
 
-        <p className="text-center text-sm">
-          <Link to="/sign-in" className="underline underline-offset-4 hover:text-primary">
-            {t.signIn}
-          </Link>
-        </p>
+        {signInLink}
       </div>
     </FullPageMessage>
   )
-}
+}

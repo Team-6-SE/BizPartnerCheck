@@ -7,13 +7,17 @@ import { useIdleSignOut } from '@/auth/use-idle-sign-out'
 import { FullPageMessage } from '@/components/full-page-message'
 import { Button } from '@/components/ui/button'
 
-/** Shows the app only to signed-in users; everyone else goes to Keycloak's sign-in page. */
-export function RequireAuth({ children }: { children: ReactNode }) {
+/**
+ * Shows the app only to signed-in users; everyone else goes to Keycloak's sign-in page.
+ * On "/" visitors who are not signed in see `publicHome` (the landing page) instead.
+ */
+export function RequireAuth({ children, publicHome }: { children: ReactNode; publicHome?: ReactNode }) {
   const auth = useAuth()
   const location = useLocation()
   const redirecting = useRef(false)
   const [signInFailed, setSignInFailed] = useState(false)
   const signedIn = auth.isAuthenticated
+  const showPublicHome = !signedIn && publicHome !== undefined && location.pathname === '/'
 
   // Another tab signed out: follow it.
   useEffect(() => onSignOutInOtherTab(), [])
@@ -45,12 +49,14 @@ export function RequireAuth({ children }: { children: ReactNode }) {
       redirecting.current = false
       return
     }
+    if (showPublicHome) return
     // Not while a sign-in/renewal/sign-out is already running, and only once.
     if (auth.isLoading || auth.activeNavigator || redirecting.current || signInFailed || isLeaving()) return
     startSignIn(location.pathname + location.search + location.hash)
-  }, [signedIn, auth.isLoading, auth.activeNavigator, location, signInFailed, startSignIn])
+  }, [signedIn, showPublicHome, auth.isLoading, auth.activeNavigator, location, signInFailed, startSignIn])
 
   if (signedIn) return children
+  if (showPublicHome) return publicHome
   if (signInFailed) {
     return (
       <FullPageMessage

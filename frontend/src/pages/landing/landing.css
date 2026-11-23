@@ -1,0 +1,1361 @@
+/*
+ * Landing page for visitors who are not signed in.
+ * One memorable moment: the glass cube with the registers orbiting it. Everything else is quiet.
+ * Motion (emil-design-eng): strong ease-out on entry, linear for constant motion, only transform/opacity.
+ */
+
+.landing {
+  --lp-mist: #eef0fb;
+  --lp-lilac: #dfe2fa;
+  --lp-indigo: #4b4de6;
+  --lp-indigo-deep: #2f2fb8;
+  --lp-ink: #1b1a3c;
+  --lp-slate: #5d6084;
+  --lp-signal: #23b26d;
+  --lp-glass: rgb(255 255 255 / 0.58);
+  --lp-glass-edge: rgb(255 255 255 / 0.9);
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+
+  color: var(--lp-ink);
+  background: #f6f7fd;
+  font-family: var(--font-sans);
+  overflow-x: clip;
+}
+
+/* ------------------------------------------------------------------ top bar */
+
+.lp-topbar {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 50;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 20px clamp(16px, 4vw, 48px);
+}
+
+.lp-link-button {
+  display: inline-flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 18px;
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--lp-ink);
+  background: rgb(255 255 255 / 0.55);
+  border: 1px solid rgb(255 255 255 / 0.9);
+  box-shadow: 0 1px 2px rgb(40 40 120 / 0.06);
+  backdrop-filter: blur(12px);
+  transition:
+    transform 160ms var(--ease-out),
+    background-color 160ms ease;
+}
+
+.lp-link-button:active {
+  transform: scale(0.97);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .lp-link-button:hover {
+    background: rgb(255 255 255 / 0.85);
+  }
+}
+
+/* ------------------------------------------------------------------ hero */
+/*
+ * The hero follows the reference picture: a 1280 × 720 scene (all positions below are in
+ * scene pixels) that the script scales to the window with --k. The button, the scroll cue
+ * and the globe sit outside the scene, at positions the script computes (--cta-y, …), so
+ * they keep a usable size on phones.
+ */
+
+.lp-hero {
+  position: relative;
+  isolation: isolate;
+  height: 100svh;
+  min-height: 600px;
+  max-height: 1200px;
+  overflow: hidden;
+  --k: 1;
+  --scene-top: 0px;
+  --cta-y: 70%;
+  --globe-y: 75%;
+  /* Pointer (-1…1) and scroll (0…1), smoothed by useHeroMotion. */
+  --mx: 0;
+  --my: 0;
+  --sp: 0;
+  background:
+    radial-gradient(42% 46% at 22% 26%, rgb(255 255 255 / 0.95) 0%, rgb(255 255 255 / 0) 70%),
+    radial-gradient(38% 50% at 50% 42%, rgb(240 241 253 / 0.9) 0%, rgb(240 241 253 / 0) 75%),
+    radial-gradient(55% 70% at 96% 18%, #c7cbf2 0%, rgb(199 203 242 / 0) 70%),
+    radial-gradient(60% 50% at 88% 78%, #d3d6f5 0%, rgb(211 214 245 / 0) 70%),
+    linear-gradient(180deg, #e7e9f9 0%, #dcdff7 100%);
+}
+
+/* The globe dissolves into the page below: no edge between the hero and the next section. */
+.lp-hero::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0;
+  height: clamp(64px, 11%, 120px);
+  z-index: 35;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgb(246 247 253 / 0) 0%,
+    rgb(246 247 253 / 0.45) 40%,
+    rgb(246 247 253 / 0.85) 72%,
+    #f6f7fd 100%
+  );
+}
+
+/* The light band that sweeps down on the right of the reference. */
+.lp-hero::before {
+  content: '';
+  position: absolute;
+  top: -30%;
+  right: -22%;
+  width: 70%;
+  height: 160%;
+  border-radius: 50%;
+  border-left: 70px solid rgb(255 255 255 / 0.28);
+  filter: blur(18px);
+  rotate: -14deg;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.lp-scene {
+  position: absolute;
+  left: 50%;
+  top: var(--scene-top);
+  width: 1280px;
+  height: 720px;
+  /* While the page scrolls, the scene stays behind a little and fades: depth between the layers. */
+  transform: translateX(-50%) translateY(calc(var(--sp) * 14vh)) scale(var(--k));
+  transform-origin: 50% 0;
+  opacity: calc(1 - var(--sp) * 1.5);
+}
+
+.lp-svg {
+  position: absolute;
+  inset: 0;
+  width: 1280px;
+  height: 720px;
+  overflow: visible;
+  pointer-events: none;
+  transform: translate3d(calc(var(--mx) * 6px), calc(var(--my) * 5px), 0);
+  /* Own layer: moving it must not re-render the blurred ring. */
+  will-change: transform;
+}
+
+.lp-svg--back {
+  z-index: 1;
+}
+.lp-svg--glint {
+  z-index: 2;
+  will-change: transform;
+}
+.lp-svg--front {
+  z-index: 30;
+}
+
+.lp-glint {
+  animation: lp-glint 11s linear infinite;
+}
+
+@keyframes lp-glint {
+  to {
+    stroke-dashoffset: -2900;
+  }
+}
+
+/* ------------------------------------------------------------------ cube */
+
+.lp-cube-anchor {
+  --cube: 190px;
+  position: absolute;
+  left: 642px;
+  top: 272px;
+  z-index: 20;
+  width: var(--cube);
+  height: var(--cube);
+  translate: -50% -50%;
+  perspective: 1100px;
+  transform: translate3d(calc(var(--mx) * 10px), calc(var(--my) * 8px - var(--sp) * 60px), 0);
+  will-change: transform;
+}
+
+.lp-cube-glow {
+  position: absolute;
+  inset: -55%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgb(88 98 250 / 0.42) 0%, rgb(98 104 250 / 0) 60%);
+  z-index: -1;
+}
+
+.lp-cube-float {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  animation: lp-float 7s ease-in-out infinite alternate;
+}
+
+/* The WebGL cube needs room around the cube for its corners and glow. */
+.lp-cube-canvas {
+  position: absolute;
+  left: -30%;
+  top: -30%;
+  width: 160%;
+  height: 160%;
+  opacity: 0;
+  transition: opacity 500ms ease;
+}
+.lp-cube-float[data-mode='webgl'] .lp-cube-canvas {
+  opacity: 1;
+}
+.lp-cube-float[data-mode='css'] .lp-cube-canvas {
+  display: none;
+}
+
+/* An edge towards the viewer, a little of the top visible. It rocks slowly. */
+.lp-cube {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transform: rotateX(-19deg) rotateY(45deg);
+  animation: lp-rock 12s ease-in-out infinite alternate;
+}
+
+/*
+ * The CSS cube (without WebGL). Clear, thick glass: the colour gathers deep inside each face, the rim stays clear and
+ * shows what is behind. A bright outer edge, the inner edge of the bevel (::after) and a
+ * sheen across. Only the faces towards the viewer exist.
+ */
+.lp-face {
+  position: absolute;
+  inset: 0;
+  border-radius: 9%;
+  overflow: hidden;
+  backface-visibility: hidden;
+  /* The bevel scales with the cube (the small one at the end of the page too). */
+  --bevel: calc(var(--cube) * 0.063);
+  box-shadow:
+    inset 0 0 0 1.5px rgb(255 255 255 / 0.95),
+    inset 0 0 calc(var(--bevel) * 0.85) calc(var(--bevel) * 0.25) rgb(255 255 255 / 0.55),
+    inset 0 0 0 var(--bevel) rgb(214 222 255 / 0.22),
+    inset 0 calc(var(--bevel) * -1.3) calc(var(--bevel) * 1.7) calc(var(--bevel) * -0.7) rgb(255 255 255 / 0.45);
+}
+
+.lp-face::after {
+  content: '';
+  position: absolute;
+  inset: 6.5%;
+  border-radius: 5%;
+  border: 1px solid rgb(255 255 255 / 0.55);
+  box-shadow:
+    0 0 8px rgb(255 255 255 / 0.35),
+    inset 0 0 10px rgb(255 255 255 / 0.15);
+}
+
+/* The face with the check: the deepest blue. Where two faces meet, the corners are square. */
+.lp-face--check {
+  border-radius: 9% 0 0 9%;
+  transform: rotateY(-90deg) translateZ(calc(var(--cube) / 2));
+  background:
+    linear-gradient(118deg, rgb(255 255 255 / 0) 30%, rgb(255 255 255 / 0.22) 41%, rgb(255 255 255 / 0) 52%),
+    linear-gradient(90deg, rgb(255 255 255 / 0) 84%, rgb(255 255 255 / 0.5) 100%),
+    radial-gradient(70% 72% at 46% 46%, rgb(40 54 206 / 0.96) 0%, rgb(54 72 220 / 0.9) 42%, rgb(110 132 240 / 0.62) 76%, rgb(205 214 255 / 0.32) 100%);
+}
+
+/* The face with the map catches more light. */
+.lp-face--map {
+  border-radius: 0 9% 9% 0;
+  transform: translateZ(calc(var(--cube) / 2));
+  background:
+    linear-gradient(122deg, rgb(255 255 255 / 0) 34%, rgb(255 255 255 / 0.2) 46%, rgb(255 255 255 / 0) 58%),
+    linear-gradient(270deg, rgb(255 255 255 / 0) 86%, rgb(255 255 255 / 0.55) 100%),
+    radial-gradient(72% 74% at 52% 50%, rgb(66 86 226 / 0.88) 0%, rgb(90 112 236 / 0.8) 45%, rgb(150 168 248 / 0.55) 78%, rgb(214 222 255 / 0.32) 100%);
+}
+
+/* Scandinavia and the Baltic, engraved into the glass. */
+.lp-face--map::before,
+.lp-face--check::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgb(255 255 255 / 0.55);
+  mask: url('../../assets/landing/europe-land.svg') 88% 8% / 108% auto no-repeat;
+}
+
+/* Iberia, fainter, low on the check face. */
+.lp-face--check::before {
+  background: rgb(255 255 255 / 0.16);
+  mask-position: 0% 100%;
+  mask-size: 210% auto;
+}
+
+/* The top: nearly clear, with the four facets a glass cube shows from above. */
+.lp-face--top {
+  transform: rotateX(90deg) translateZ(calc(var(--cube) / 2));
+  background:
+    linear-gradient(45deg, rgb(255 255 255 / 0) 49.3%, rgb(255 255 255 / 0.8) 50%, rgb(255 255 255 / 0) 50.7%),
+    linear-gradient(-45deg, rgb(255 255 255 / 0) 49.3%, rgb(255 255 255 / 0.8) 50%, rgb(255 255 255 / 0) 50.7%),
+    conic-gradient(
+      from 45deg,
+      rgb(255 255 255 / 0.42) 0 25%,
+      rgb(214 222 255 / 0.3) 25% 50%,
+      rgb(140 156 242 / 0.42) 50% 75%,
+      rgb(240 243 255 / 0.5) 75% 100%
+    ),
+    rgb(196 206 250 / 0.5);
+}
+
+.lp-check {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+}
+
+/* Raised out of the glass: a soft shadow below, a glow around. */
+.lp-check svg {
+  width: 82%;
+  height: 82%;
+  overflow: visible;
+  filter: drop-shadow(1.5px 3px 1.5px rgb(16 22 120 / 0.5)) drop-shadow(0 0 9px rgb(255 255 255 / 0.55));
+}
+
+/* ------------------------------------------------------------------ register chips */
+
+/* Where a chip sits; the mouse moves it by its depth, scrolling pushes it outwards. */
+.lp-chip-place {
+  position: absolute;
+  transform: translate(-50%, -50%)
+    translate3d(
+      calc(var(--mx) * var(--depth) * 1px + var(--sp) * var(--side) * 160px),
+      calc(var(--my) * var(--depth) * 0.8px - var(--sp) * 90px),
+      0
+    );
+  will-change: transform;
+}
+
+/* Each chip floats on its own slow path, so they never move in step. */
+.lp-chip-float {
+  animation: lp-levitate var(--float, 8s) ease-in-out infinite;
+  animation-delay: var(--delay, 0s);
+}
+
+@keyframes lp-levitate {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  25% {
+    transform: translate3d(4px, -9px, 0) rotate(0.8deg);
+  }
+  50% {
+    transform: translate3d(-1px, -14px, 0) rotate(-0.5deg);
+  }
+  75% {
+    transform: translate3d(-5px, -5px, 0) rotate(0.6deg);
+  }
+}
+
+/*
+ * Thick clear glass: the background shows through softly, the light comes from the upper
+ * left and follows the mouse, the rim fades from bright to clear, and a sheen glides over it
+ * now and then. Turned towards the cube, and towards the mouse.
+ */
+.lp-chip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 134px;
+  height: 60px;
+  padding: 0 16px 0 18px;
+  overflow: hidden;
+  border-radius: 13px;
+  color: #1c2063;
+  font-size: 15.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  background:
+    radial-gradient(120% 150% at 0% 0%, rgb(255 255 255 / 0.36) 0%, rgb(255 255 255 / 0.1) 45%, rgb(255 255 255 / 0.02) 72%),
+    radial-gradient(80% 120% at 100% 100%, rgb(255 255 255 / 0.24) 0%, rgb(255 255 255 / 0) 65%),
+    rgb(198 205 252 / 0.12);
+  box-shadow:
+    inset 0 12px 16px -14px rgb(255 255 255 / 0.95),
+    inset 12px 0 16px -14px rgb(255 255 255 / 0.6),
+    inset 0 -12px 16px -13px rgb(255 255 255 / 0.75),
+    inset 0 -22px 26px -18px rgb(96 108 230 / 0.26),
+    0 1.5px 0 rgb(255 255 255 / 0.6),
+    0 3px 2px -1px rgb(170 178 240 / 0.45),
+    0 22px 36px -16px rgb(52 58 184 / 0.42);
+  backdrop-filter: blur(8px) saturate(180%) brightness(1.04);
+  transform: perspective(700px) rotateY(calc(var(--turn, 0deg) + var(--mx) * 9deg))
+    rotateX(calc(var(--my) * -9deg)) rotate(var(--tilt, -8deg));
+  will-change: transform;
+}
+
+/* The reflection of the light in the glass: a soft spot that follows the mouse (moved, not repainted). */
+.lp-chip-glint {
+  position: absolute;
+  left: -10%;
+  top: -60%;
+  width: 90%;
+  height: 170%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgb(255 255 255 / 0.5), rgb(255 255 255 / 0));
+  transform: translate3d(calc(var(--mx) * 42px), calc(var(--my) * 14px), 0);
+  pointer-events: none;
+}
+
+.lp-chip > svg,
+.lp-chip > .lp-chip-label,
+.lp-chip > .lp-chip-dot {
+  position: relative;
+}
+
+/* The rim: bright at the upper left, clear along the middle, lit again at the lower right. */
+.lp-chip::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  padding: 1.3px;
+  border-radius: inherit;
+  background: linear-gradient(
+    140deg,
+    rgb(255 255 255 / 0.95) 0%,
+    rgb(255 255 255 / 0.35) 32%,
+    rgb(255 255 255 / 0.08) 58%,
+    rgb(255 255 255 / 0.7) 100%
+  );
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* A sheen glides over the glass every few seconds. */
+.lp-chip::after {
+  content: '';
+  position: absolute;
+  top: -20%;
+  bottom: -20%;
+  left: 0;
+  width: 55%;
+  background: linear-gradient(100deg, rgb(255 255 255 / 0) 0%, rgb(255 255 255 / 0.4) 50%, rgb(255 255 255 / 0) 100%);
+  filter: blur(4px);
+  transform: translateX(-140%) skewX(-12deg);
+  animation: lp-sheen 9s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+  animation-delay: calc(var(--delay, 0s) * 1.6);
+  pointer-events: none;
+}
+
+@keyframes lp-sheen {
+  0%,
+  62% {
+    transform: translateX(-140%) skewX(-12deg);
+  }
+  100% {
+    transform: translateX(260%) skewX(-12deg);
+  }
+}
+
+.lp-chip-label {
+  flex: 1;
+}
+
+.lp-chip svg {
+  width: 29px;
+  height: 29px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 2px 2px rgb(30 36 140 / 0.25));
+}
+
+.lp-chip-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #2fc177;
+  box-shadow: 0 0 8px rgb(47 193 119 / 0.75);
+}
+
+
+/* ------------------------------------------------------------------ globe */
+
+.lp-globe {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(var(--globe-y) - 120px);
+  bottom: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.lp-globe-layer {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* The continents turn slowly around the centre of the globe, far below the window. */
+.lp-globe-land {
+  position: absolute;
+  left: -150px;
+  top: 0;
+  display: block;
+  width: calc(100% + 300px);
+  height: calc(100% + 70px);
+  transform-origin: 50% var(--globe-origin, 3000px);
+  animation: lp-turn 70s ease-in-out infinite alternate;
+}
+
+@keyframes lp-turn {
+  from {
+    rotate: -1.6deg;
+  }
+  to {
+    rotate: 1.6deg;
+  }
+}
+
+/* ------------------------------------------------------------------ call to action */
+
+.lp-cta-wrap {
+  position: absolute;
+  left: 50%;
+  top: var(--cta-y);
+  z-index: 40;
+  /* Stays with the scene while the page scrolls. */
+  transform: translateY(calc(var(--sp) * 14vh));
+  opacity: calc(1 - var(--sp) * 1.8);
+  display: grid;
+  place-items: center;
+  width: 258px;
+  height: 108px;
+  translate: -50% -50%;
+}
+
+/* Thin lines leave the button to both sides. */
+.lp-cta-wrap::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 760px;
+  height: 1px;
+  translate: -50% 0;
+  background: linear-gradient(90deg, rgb(255 255 255 / 0), rgb(255 255 255 / 0.7) 30%, rgb(255 255 255 / 0) 34%, rgb(255 255 255 / 0) 66%, rgb(255 255 255 / 0.7) 70%, rgb(255 255 255 / 0));
+  z-index: -1;
+}
+
+.lp-cta {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  height: 54px;
+  padding: 0 30px 0 34px;
+  border-radius: 999px;
+  color: #ffffff;
+  font-size: 17px;
+  font-weight: 500;
+  background: linear-gradient(180deg, #5155ea 0%, #3b3dd4 100%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.3),
+    0 8px 26px rgb(61 63 214 / 0.45),
+    0 0 40px rgb(110 114 255 / 0.35);
+  transition: transform 160ms var(--ease-out), box-shadow 200ms ease;
+}
+
+.lp-cta svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.6;
+  transition: transform 200ms var(--ease-out);
+}
+
+.lp-cta:active {
+  transform: scale(0.97);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .lp-cta:hover {
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.3),
+      0 12px 34px rgb(61 63 214 / 0.55),
+      0 0 50px rgb(110 114 255 / 0.45);
+  }
+  .lp-cta:hover svg {
+    transform: translateX(3px);
+  }
+}
+
+/* A thin line runs from the oval down to the scroll cue on the globe. */
+.lp-scroll {
+  position: absolute;
+  left: 50%;
+  top: calc(var(--cta-y) + 54px);
+  bottom: 0;
+  z-index: 40;
+  opacity: calc(1 - var(--sp) * 3);
+  width: 24px;
+  translate: -50% 0;
+  pointer-events: none;
+}
+
+.lp-scroll::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0;
+  height: var(--scroll-line, 72px);
+  width: 1px;
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.9), rgb(110 112 150 / 0.55));
+}
+
+.lp-scroll a {
+  position: absolute;
+  left: 0;
+  top: var(--scroll-line, 72px);
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 36px;
+  border-radius: 999px;
+  color: #4b4e75;
+  border: 1px solid rgb(90 93 130 / 0.55);
+  background: rgb(255 255 255 / 0.55);
+  pointer-events: auto;
+}
+
+.lp-scroll svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* ------------------------------------------------------------------ load sequence */
+
+@media (prefers-reduced-motion: no-preference) {
+  .lp-cube-anchor {
+    animation: lp-cube-in 900ms var(--ease-out) both;
+  }
+  .lp-svg {
+    animation: lp-fade 1000ms var(--ease-out) 120ms both;
+  }
+  .lp-chip-wrap {
+    animation: lp-chip-in 700ms var(--ease-out) both;
+    animation-delay: calc(260ms + var(--i, 0) * 80ms);
+  }
+  .lp-globe {
+    animation: lp-rise 1100ms var(--ease-out) 60ms both;
+  }
+  .lp-cta-wrap {
+    animation: lp-fade-up 700ms var(--ease-out) 480ms backwards;
+  }
+  .lp-scroll {
+    animation: lp-fade 700ms ease 900ms backwards;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-cube,
+  .lp-cube-float,
+  .lp-chip-float,
+  .lp-chip::after,
+  .lp-glint,
+  .lp-globe-land {
+    animation: none;
+  }
+}
+
+.lp-chip-wrap {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+}
+
+@keyframes lp-rock {
+  from {
+    transform: rotateX(-20deg) rotateY(39deg);
+  }
+  to {
+    transform: rotateX(-17deg) rotateY(51deg);
+  }
+}
+
+@keyframes lp-float {
+  from {
+    transform: translateY(-5px);
+  }
+  to {
+    transform: translateY(7px);
+  }
+}
+
+@keyframes lp-cube-in {
+  from {
+    opacity: 0;
+    scale: 0.9;
+  }
+}
+
+@keyframes lp-chip-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+@keyframes lp-rise {
+  from {
+    opacity: 0;
+    transform: translateY(50px);
+  }
+}
+
+@keyframes lp-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+@keyframes lp-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* ------------------------------------------------------------------ sections below the hero */
+
+.lp-section {
+  position: relative;
+  padding: clamp(72px, 11vw, 140px) clamp(16px, 5vw, 64px);
+}
+
+.lp-inner {
+  max-width: 1160px;
+  margin: 0 auto;
+}
+
+/*
+ * The statement and its explanation share one left edge: the heading runs wide enough for
+ * three balanced lines, the paragraph follows directly below at a reading width.
+ */
+.lp-intro {
+  display: grid;
+  gap: clamp(22px, 2.6vw, 34px);
+  justify-items: start;
+}
+
+.lp-display {
+  max-width: 21ch;
+  font-size: clamp(2.3rem, 5vw, 4.25rem);
+  line-height: 1.04;
+  letter-spacing: -0.034em;
+  font-weight: 600;
+  text-wrap: balance;
+}
+
+.lp-statement-lead {
+  max-width: 38rem;
+  font-size: clamp(1.08rem, 1.45vw, 1.28rem);
+}
+
+.lp-h2 {
+  font-size: clamp(1.9rem, 3.6vw, 3rem);
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+  font-weight: 600;
+  text-wrap: balance;
+  max-width: 22ch;
+}
+
+.lp-lead {
+  font-size: clamp(1.05rem, 1.4vw, 1.2rem);
+  line-height: 1.6;
+  color: var(--lp-slate);
+  max-width: 34rem;
+  text-wrap: pretty;
+}
+
+.lp-lead strong {
+  color: var(--lp-ink);
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------------ statement (scroll-driven) */
+/*
+ * --p (0…1) is the scroll progress through the section (useScrollProgress). With data-scroll
+ * the section is tall and its stage sticks, so the page "plays" while the visitor scrolls:
+ * words light up (0–0.5), the lead appears (0.35–0.55), the registers come in (0.5–0.7),
+ * "Check" is pressed (0.74), the signal runs (0.75–0.9) and each register answers.
+ */
+.lp-statement {
+  position: relative;
+  --p: 1;
+}
+
+.lp-statement-stage {
+  display: grid;
+  align-content: center;
+  gap: clamp(40px, 6vw, 72px);
+  padding: clamp(72px, 11vw, 140px) clamp(16px, 5vw, 64px);
+}
+
+.lp-statement-stage > .lp-inner {
+  width: 100%;
+}
+
+.lp-statement[data-scroll='on'] {
+  height: 230vh;
+}
+
+.lp-statement[data-scroll='on'] .lp-statement-stage {
+  position: sticky;
+  top: 0;
+  min-height: 100vh;
+  min-height: 100svh;
+}
+
+.lp-statement[data-scroll='on'] .lp-word {
+  opacity: clamp(0.13, calc(var(--p) * 2 * (var(--n) + 1) - var(--i)), 1);
+}
+
+.lp-statement[data-scroll='on'] .lp-statement-lead {
+  opacity: clamp(0, calc((var(--p) - 0.35) * 5), 1);
+  transform: translateY(calc((1 - clamp(0, calc((var(--p) - 0.35) * 5), 1)) * 14px));
+}
+
+/* The run: a "Check" button, a track, and the five registers on it. */
+.lp-run {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+}
+
+.lp-run-check {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 52px;
+  padding: 0 26px;
+  font-size: 1.02rem;
+  border-radius: 999px;
+  color: #ffffff;
+  font-weight: 500;
+  background: linear-gradient(180deg, #5155ea 0%, #3b3dd4 100%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.3),
+    0 8px 24px rgb(61 63 214 / 0.4);
+}
+
+.lp-run-check svg {
+  width: 17px;
+  height: 17px;
+}
+
+/* The signal: a line under the registers that fills from the button to the last register. */
+.lp-run-track {
+  position: absolute;
+  left: 40px;
+  right: 30px;
+  top: 50%;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--lp-indigo), #8b8ff7) 0 0 / calc(var(--fill, 1) * 100%) 100% no-repeat,
+    rgb(75 77 230 / 0.12);
+}
+
+.lp-run-registers {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  flex: 1;
+  justify-content: space-between;
+}
+
+.lp-run-register {
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+  height: 58px;
+  padding: 0 18px 0 16px;
+  border-radius: 15px;
+  font-size: 1.02rem;
+  font-weight: 500;
+  color: #1c2063;
+  background:
+    radial-gradient(120% 150% at 0% 0%, rgb(255 255 255 / 0.95) 0%, rgb(255 255 255 / 0.55) 60%),
+    rgb(220 224 255 / 0.5);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 1),
+    inset 0 -10px 16px -12px rgb(96 108 230 / 0.3),
+    0 16px 30px -16px rgb(52 58 184 / 0.4);
+  backdrop-filter: blur(8px);
+}
+
+.lp-run-register svg {
+  width: 24px;
+  height: 24px;
+}
+
+.lp-run-dot {
+  width: 8px;
+  height: 8px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: #c9cce9;
+  transition:
+    background-color 200ms ease,
+    box-shadow 200ms ease;
+}
+
+@media (max-width: 759px) {
+  .lp-run {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .lp-run-track {
+    display: none;
+  }
+  .lp-run-registers {
+    flex: none;
+    width: 100%;
+    justify-content: flex-start;
+    gap: 10px;
+  }
+  .lp-run-register {
+    height: 50px;
+    font-size: 0.95rem;
+  }
+}
+
+/* Without the scroll play (no JavaScript, reduced motion) the run is shown as done. */
+.lp-statement:not([data-scroll='on']) .lp-run-dot {
+  background: var(--lp-signal);
+  box-shadow: 0 0 10px rgb(35 178 109 / 0.7);
+}
+
+.lp-statement[data-scroll='on'] {
+  --fill: clamp(0, calc((var(--p) - 0.75) / 0.15), 1);
+}
+
+/* The button and the empty track come in with the registers. */
+.lp-statement[data-scroll='on'] .lp-run-track {
+  opacity: clamp(0, calc((var(--p) - 0.5) * 10), 1);
+}
+
+.lp-statement[data-scroll='on'] .lp-run-register {
+  --in: clamp(0, calc((var(--p) - 0.5 - var(--i) * 0.035) * 10), 1);
+  opacity: var(--in);
+  transform: translateY(calc((1 - var(--in)) * 18px)) scale(calc(0.96 + var(--in) * 0.04));
+}
+
+/* Comes in first, pressed between 0.74 and 0.76. */
+.lp-statement[data-scroll='on'] .lp-run-check {
+  --press: calc(clamp(0, calc((var(--p) - 0.735) * 60), 1) - clamp(0, calc((var(--p) - 0.765) * 60), 1));
+  --in: clamp(0, calc((var(--p) - 0.46) * 10), 1);
+  opacity: var(--in);
+  transform: translateY(calc((1 - var(--in)) * 18px)) scale(calc(1 - var(--press) * 0.06));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.3),
+    0 8px 24px rgb(61 63 214 / 0.4),
+    0 0 0 calc(var(--press) * 8px) rgb(75 77 230 / 0.18);
+}
+
+/* A register answers when the signal reaches it: its dot turns green. */
+.lp-statement[data-scroll='on'] .lp-run-dot {
+  --on: clamp(0, calc((var(--p) - 0.78 - var(--i) * 0.03) * 80), 1);
+  background: color-mix(in oklab, var(--lp-signal) calc(var(--on) * 100%), #c9cce9);
+  box-shadow: 0 0 calc(var(--on) * 10px) rgb(35 178 109 / 0.7);
+}
+
+/* The registers, as one glass sheet with rows. */
+.lp-sources {
+  margin-top: clamp(32px, 4vw, 56px);
+  border-radius: 28px;
+  background: rgb(255 255 255 / 0.7);
+  border: 1px solid #ffffff;
+  box-shadow:
+    0 30px 80px rgb(70 74 190 / 0.1),
+    inset 0 1px 0 #ffffff;
+  overflow: hidden;
+}
+
+.lp-source {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 6px 20px;
+  padding: 24px clamp(18px, 3vw, 36px);
+  align-items: center;
+}
+
+.lp-source + .lp-source {
+  border-top: 1px solid #e7e9f8;
+}
+
+@media (min-width: 820px) {
+  .lp-source {
+    grid-template-columns: 52px minmax(0, 0.9fr) minmax(0, 1.4fr);
+  }
+}
+
+/* A small glass tile, like the chips of the hero. */
+.lp-source-icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 15px;
+  background:
+    radial-gradient(120% 120% at 0% 0%, rgb(255 255 255 / 0.95), rgb(255 255 255 / 0.4) 60%),
+    rgb(214 219 255 / 0.5);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 1),
+    inset 0 -8px 14px -10px rgb(96 108 230 / 0.3),
+    0 10px 22px -10px rgb(61 63 214 / 0.35);
+  grid-row: span 2;
+}
+
+@media (min-width: 820px) {
+  .lp-source-icon {
+    grid-row: auto;
+  }
+}
+
+.lp-source-icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.lp-source-name {
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.lp-source-owner {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.9rem;
+  font-weight: 400;
+  color: var(--lp-slate);
+}
+
+.lp-source-question {
+  font-size: 1.02rem;
+  line-height: 1.55;
+  color: var(--lp-ink);
+  grid-column: 2;
+}
+
+@media (min-width: 820px) {
+  .lp-source-question {
+    grid-column: 3;
+  }
+}
+
+/* How it works: a real sequence, next to a preview of the result. */
+.lp-how {
+  display: grid;
+  gap: clamp(36px, 5vw, 72px);
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+}
+
+@media (min-width: 980px) {
+  .lp-how {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  }
+}
+
+.lp-steps {
+  display: grid;
+  gap: 28px;
+  counter-reset: step;
+}
+
+.lp-step {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 16px;
+}
+
+.lp-step-number {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  font-weight: 600;
+  color: var(--lp-indigo);
+  background: #ffffff;
+  border: 1px solid #dfe2fb;
+  box-shadow: 0 4px 14px rgb(75 77 230 / 0.12);
+}
+
+.lp-step h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin-top: 9px;
+}
+
+.lp-step p {
+  margin-top: 4px;
+  color: var(--lp-slate);
+  line-height: 1.6;
+}
+
+/* A still of the partner list, built from the app's own words. */
+.lp-preview {
+  position: relative;
+  border-radius: 26px;
+  padding: clamp(18px, 2.4vw, 28px);
+  background:
+    radial-gradient(80% 90% at 100% 0%, rgb(205 209 255 / 0.7), rgb(205 209 255 / 0) 60%),
+    rgb(255 255 255 / 0.72);
+  border: 1px solid #ffffff;
+  box-shadow: 0 40px 90px rgb(70 74 190 / 0.16);
+}
+
+.lp-preview-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e7e9f8;
+}
+
+.lp-preview-name {
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+.lp-preview-ids {
+  font-size: 0.85rem;
+  color: var(--lp-slate);
+  font-variant-numeric: tabular-nums;
+}
+
+.lp-preview-rows {
+  display: grid;
+  gap: 2px;
+  margin-top: 10px;
+}
+
+.lp-preview-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 4px;
+  font-size: 0.95rem;
+}
+
+.lp-preview-row + .lp-preview-row {
+  border-top: 1px dashed #e4e6f6;
+}
+
+.lp-preview-source {
+  color: var(--lp-slate);
+}
+
+/* An answer: quiet text with the same glowing dot as the chips in the hero. */
+.lp-result {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--lp-ink);
+}
+
+.lp-result::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--lp-signal);
+  box-shadow: 0 0 9px rgb(35 178 109 / 0.65);
+}
+
+.lp-preview-foot {
+  margin-top: 14px;
+  font-size: 0.85rem;
+  color: var(--lp-slate);
+}
+
+/* Trust: four plain statements. */
+.lp-trust {
+  margin-top: clamp(32px, 4vw, 56px);
+  display: grid;
+  gap: clamp(24px, 3vw, 40px) clamp(24px, 4vw, 64px);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 760px) {
+  .lp-trust {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.lp-trust-item {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 16px;
+  padding-top: 24px;
+  border-top: 1px solid #dfe2f6;
+}
+
+.lp-trust-item svg {
+  width: 26px;
+  height: 26px;
+  color: var(--lp-indigo);
+  margin-top: 2px;
+}
+
+.lp-trust-item h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.lp-trust-item p {
+  margin-top: 6px;
+  color: var(--lp-slate);
+  line-height: 1.6;
+}
+
+/* Closing call to action, on the same mist as the hero. */
+.lp-closing {
+  text-align: center;
+  background:
+    radial-gradient(60% 80% at 50% 100%, #d9dcfa 0%, rgb(217 220 250 / 0) 70%),
+    linear-gradient(180deg, #f6f7fd 0%, #eceefb 100%);
+}
+
+.lp-closing .lp-h2 {
+  margin: 0 auto;
+}
+
+.lp-closing .lp-lead {
+  margin: 18px auto 0;
+}
+
+.lp-closing-actions {
+  margin-top: 36px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+}
+
+.lp-mini-cube {
+  position: relative;
+  width: 110px;
+  height: 120px;
+  margin: 0 auto 32px;
+}
+
+.lp-mini-cube .lp-cube-anchor {
+  --cube: 74px;
+  left: 50%;
+  top: 50%;
+  animation: none;
+}
+
+.lp-footer {
+  padding: 28px clamp(16px, 5vw, 64px) 36px;
+  font-size: 0.9rem;
+  color: var(--lp-slate);
+  text-align: center;
+  background: #eceefb;
+}
+
+.landing :focus-visible {
+  outline: 2px solid var(--lp-indigo);
+  outline-offset: 3px;
+}
+
+@media (max-width: 759px) {
+  .lp-chip {
+    scale: 1.12;
+  }
+  .lp-cta {
+    height: 50px;
+    font-size: 16px;
+  }
+}
+
+/* ------------------------------------------------------------------ explanatory motion */
+
+/* The preview runs a check when it scrolls into view: each register answers in turn. */
+.lp-pending {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.95rem;
+  color: var(--lp-slate);
+}
+
+.lp-pending i {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #c9ccef;
+  border-top-color: var(--lp-indigo);
+  animation: lp-spin 700ms linear infinite;
+}
+
+.lp-result {
+  transition:
+    opacity 260ms var(--ease-out),
+    transform 260ms var(--ease-out);
+  @starting-style {
+    opacity: 0;
+    transform: translateX(6px);
+  }
+}
+
+@keyframes lp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Register rows appear one after another, once. */
+@media (prefers-reduced-motion: no-preference) {
+  .lp-sources[data-shown='false'] .lp-source {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  .lp-source {
+    transition:
+      opacity 500ms var(--ease-out),
+      transform 500ms var(--ease-out);
+    transition-delay: calc(var(--i, 0) * 70ms);
+  }
+}

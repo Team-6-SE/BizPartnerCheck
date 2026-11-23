@@ -1,6 +1,11 @@
 # Self-registration of organisations (S2.2 / SCRUM-48)
 
-A new customer registers on `/register` (linked from the sign-in page). No one at our side has to do anything.
+A new customer registers on `/register` (linked from the landing page and the sign-in page). No one at our side
+has to do anything.
+
+- The language dropdown (English / Deutsch) sits where Keycloak's own one sits on the sign-in page. The choice is
+  remembered in the browser and sent to Keycloak (`ui_locales`), so the sign-in page opens in the same language.
+- "Already have an account? Sign in" goes straight to Keycloak's sign-in page, without a page of ours in between.
 
 ## Flow
 

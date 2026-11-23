@@ -1,8 +1,9 @@
-import { Fragment, Suspense } from 'react'
+import { Fragment, Suspense, useEffect } from 'react'
 import { Outlet, useLocation } from 'react-router'
 
 import { findNavItem } from '@/app/navigation'
 import { AppSidebar } from '@/components/app-sidebar'
+import { VideoGuidesDialog } from '@/components/video-guides'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -13,7 +14,32 @@ import {
 import { Separator } from '@/components/ui/separator'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 
+/** Loads every page in the background, so moving between pages never waits for a download. */
+function usePreloadPages() {
+  useEffect(() => {
+    const preload = () => {
+      void import('@/pages/DashboardPage')
+      void import('@/pages/PartnersPage')
+      void import('@/pages/PartnerDetailPage')
+      void import('@/pages/HistoryPage')
+      void import('@/pages/NewCheckPage')
+      void import('@/pages/CheckResultPage')
+      void import('@/pages/OrganizationSettingsPage')
+      void import('@/pages/SecurityLogPage')
+      void import('@/pages/ApiTokensPage')
+      void import('@/pages/UsersPage')
+      void import('@/pages/OrganizationsPage')
+    }
+    const idle = window.requestIdleCallback?.(preload) ?? window.setTimeout(preload, 800)
+    return () => {
+      if (window.cancelIdleCallback) window.cancelIdleCallback(idle)
+      else window.clearTimeout(idle)
+    }
+  }, [])
+}
+
 export function AppLayout() {
+  usePreloadPages()
   const { pathname } = useLocation()
   const current = findNavItem(pathname)
   const crumbs = current ? [current.group.title, current.item.title] : []
@@ -51,13 +77,15 @@ export function AppLayout() {
             </BreadcrumbList>
           </Breadcrumb>
         </header>
-        <div id="main" className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6 sm:py-10">
+        <div id="main" className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-8 sm:py-10">
           {/* Pages load on demand; the sidebar stays while they do. */}
           <Suspense fallback={null}>
             <Outlet />
           </Suspense>
         </div>
       </SidebarInset>
+      {/* Opens by itself on a user's first visit; Settings opens it again. */}
+      <VideoGuidesDialog />
     </SidebarProvider>
   )
 }

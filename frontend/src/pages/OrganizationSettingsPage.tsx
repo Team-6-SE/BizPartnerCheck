@@ -4,7 +4,9 @@ import { CircleCheckIcon, SaveIcon } from 'lucide-react'
 import { ApiError } from '@/api/client'
 import { getOrganization, updateOrganizationVatNumber, type Organization } from '@/api/organization'
 import { ORG_ADMIN_ROLE, useRoles } from '@/auth/roles'
+import { AppearanceSettings } from '@/components/appearance-settings'
 import { PageHeader } from '@/components/page-header'
+import { VideoGuidesSettings } from '@/components/video-guides'
 import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
@@ -82,7 +84,10 @@ export function OrganizationSettingsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Settings" description="Details of your organization that every check uses." />
+      <PageHeader title="Settings" description="How the app looks for you, and the details of your organization." />
+
+      <AppearanceSettings />
+      <VideoGuidesSettings />
 
       {loadState.status === 'error' && (
         <Alert variant="destructive">

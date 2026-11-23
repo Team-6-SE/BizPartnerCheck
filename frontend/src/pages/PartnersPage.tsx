@@ -395,7 +395,7 @@ export function PartnersPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Partners"
-        description="Add a partner by its VAT number or company register number and check it with the EU VIES service, the BMF list of fake companies and the ÖGK HFU list."
+        description="Add a partner by its VAT number or company register number and check it against VIES, the BMF and HFU lists, the Firmenbuch and GISA."
       />
 
       <Card>
@@ -684,7 +684,7 @@ export function PartnersPage() {
                                   {dateFormat.format(new Date(partner.created_at))}
                                 </time>
                               </div>
-                              <div className="flex flex-wrap gap-2">
+                              <div className="flex flex-wrap items-center gap-2">
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -699,6 +699,7 @@ export function PartnersPage() {
                               </div>
                               <Link
                                 to={`/partners/${partner.id}`}
+                                viewTransition
                                 className="text-sm font-medium underline underline-offset-4 hover:text-primary"
                               >
                                 View details
@@ -728,7 +729,7 @@ export function PartnersPage() {
                             onCheck={handleCheck}
                           />
                         </TableCell>
-                        <TableCell className="min-w-44 align-top whitespace-normal">
+                        <TableCell className="min-w-32 align-top whitespace-normal">
                           {waiting.includes('VIES') ? (
                             <WaitingForSource />
                           ) : check ? (
@@ -751,7 +752,7 @@ export function PartnersPage() {
                             </p>
                           ))}
                         </TableCell>
-                        <TableCell className="min-w-52 align-top whitespace-normal">
+                        <TableCell className="min-w-36 align-top whitespace-normal">
                           {waiting.includes('BMF') ? (
                             <WaitingForSource />
                           ) : bmfCheck ? (
@@ -767,7 +768,7 @@ export function PartnersPage() {
                             <span className="text-muted-foreground">Not checked yet</span>
                           )}
                         </TableCell>
-                        <TableCell className="min-w-52 align-top whitespace-normal">
+                        <TableCell className="min-w-36 align-top whitespace-normal">
                           {waiting.includes('HFU') ? (
                             <WaitingForSource />
                           ) : hfuCheck ? (
@@ -785,7 +786,7 @@ export function PartnersPage() {
                             <span className="text-muted-foreground">No VAT number, HFU does not apply</span>
                           )}
                         </TableCell>
-                        <TableCell className="min-w-52 align-top whitespace-normal">
+                        <TableCell className="min-w-36 align-top whitespace-normal">
                           {waiting.includes('FIRMENBUCH') ? (
                             <WaitingForSource />
                           ) : registerCheck ? (
@@ -803,7 +804,7 @@ export function PartnersPage() {
                             <span className="text-muted-foreground">No FN, Firmenbuch does not apply</span>
                           )}
                         </TableCell>
-                        <TableCell className="min-w-52 align-top whitespace-normal">
+                        <TableCell className="min-w-36 align-top whitespace-normal">
                           {waiting.includes('GISA') ? (
                             <WaitingForSource />
                           ) : gisaCheck ? (

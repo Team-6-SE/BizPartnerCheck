@@ -52,12 +52,9 @@ export function AppSidebar() {
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" render={<Link to="/" />} tooltip="BizPartnerCheck">
+            <SidebarMenuButton size="lg" render={<Link to="/" viewTransition />} tooltip="BizPartnerCheck">
               <img src="/favicon.svg" alt="" width={32} height={32} className="size-8 shrink-0" />
-              <span className="flex min-w-0 flex-col leading-tight">
-                <span className="truncate font-heading font-semibold">BizPartnerCheck</span>
-                <span className="truncate text-xs text-muted-foreground">Test organization</span>
-              </span>
+              <span className="truncate font-heading font-semibold">BizPartnerCheck</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -74,7 +71,7 @@ export function AppSidebar() {
                   return (
                     <SidebarMenuItem key={item.url}>
                       <SidebarMenuButton
-                        render={<Link to={item.url} aria-current={active ? 'page' : undefined} />}
+                        render={<Link to={item.url} viewTransition aria-current={active ? 'page' : undefined} />}
                         isActive={active}
                         tooltip={item.title}
                       >

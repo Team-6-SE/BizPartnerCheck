@@ -128,7 +128,7 @@ export function PartnerDetailPage() {
               {error || 'Partner not found.'}
             </p>
 
-            <Button variant="outline" className="mt-4" onClick={() => navigate('/partners')}>
+            <Button variant="outline" className="mt-4" onClick={() => navigate('/partners', { viewTransition: true })}>
               Back to partners
             </Button>
           </CardContent>
@@ -145,8 +145,8 @@ export function PartnerDetailPage() {
       />
 
       <div>
-        <Button variant="outline" size="sm" onClick={() => navigate('/partners')}>
-          ← Back to partners
+        <Button variant="outline" size="sm" onClick={() => navigate('/partners', { viewTransition: true })}>
+          Back to partners
         </Button>
       </div>
 

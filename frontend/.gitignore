@@ -26,3 +26,5 @@ dist-ssr
 # Playwright (end-to-end tests)
 test-results
 playwright-report
+# Raw recordings of scripts/record-guides.mjs
+.guides-raw

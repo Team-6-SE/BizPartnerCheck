@@ -1,4 +1,4 @@
-import { ArrowLeftIcon, FileSearchIcon } from 'lucide-react'
+import { FileSearchIcon } from 'lucide-react'
 import { Link } from 'react-router'
 
 import { ComingSoon } from '@/components/coming-soon'
@@ -18,8 +18,7 @@ export function CheckResultPage() {
         title="Check Results Are Not Available Yet"
         description="Here you will see GREEN, YELLOW or RED with the reason for every check."
       >
-        <Button variant="outline" nativeButton={false} render={<Link to="/checks" />}>
-          <ArrowLeftIcon data-icon="inline-start" />
+        <Button variant="outline" nativeButton={false} render={<Link to="/checks" viewTransition />}>
           Back to History
         </Button>
       </ComingSoon>

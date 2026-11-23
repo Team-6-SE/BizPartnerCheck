@@ -6,12 +6,10 @@ import { AuthProvider } from 'react-oidc-context'
 import './index.css'
 import App from './App.tsx'
 import { rememberSignIn, safeReturnPath, userManager, type SignInState } from './auth/oidc'
+import { initTheme } from './lib/theme'
 
-// Follow the operating system's light/dark setting (shadcn uses the "dark" class).
-const darkQuery = window.matchMedia('(prefers-color-scheme: dark)')
-const applyTheme = () => document.documentElement.classList.toggle('dark', darkQuery.matches)
-applyTheme()
-darkQuery.addEventListener('change', applyTheme)
+// Light by default; the choice in Settings wins (shadcn uses the "dark" class).
+initTheme()
 
 // Back from Keycloak: remove ?code=…&state=… from the address and open the page the user wanted.
 function onSigninCallback(user: User | undefined) {

@@ -1,6 +1,7 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { useAuth } from 'react-oidc-context'
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router'
+import { createBrowserRouter, createRoutesFromElements, Navigate, Outlet, Route } from 'react-router'
+import { RouterProvider } from 'react-router/dom'
 
 import { signIn } from '@/auth/oidc'
 import { RequireAuth } from '@/auth/RequireAuth'
@@ -21,6 +22,7 @@ const OrganizationsPage = lazy(() => import('@/pages/OrganizationsPage').then((m
 const SecurityLogPage = lazy(() => import('@/pages/SecurityLogPage').then((m) => ({ default: m.SecurityLogPage })))
 const PartnersPage = lazy(() => import('@/pages/PartnersPage').then((m) => ({ default: m.PartnersPage })))
 const PartnerDetailPage = lazy(() => import('@/pages/PartnerDetailPage').then((m) => ({ default: m.PartnerDetailPage })))
+const LandingPage = lazy(() => import('@/pages/landing/LandingPage').then((m) => ({ default: m.LandingPage })))
 const SignInPage = lazy(() => import('@/pages/SignInPage').then((m) => ({ default: m.SignInPage })))
 const RegistrationPage = lazy(() =>
   import('@/pages/RegistrationPage').then((m) => ({ default: m.RegistrationPage })),
@@ -50,39 +52,55 @@ function App() {
   }
 
   return (
-    <BrowserRouter>
-      <TooltipProvider>
-        <Suspense fallback={null}>
-          <Routes>
-            <Route path="/sign-in" element={<SignInPage />} />
-            <Route path="/register" element={<RegistrationPage />} />
-            {/* Keycloak sends the user back here; the code is handled before the router starts. */}
-            <Route path="/auth/callback" element={<Navigate to="/" replace />} />
-            <Route
-              element={
-                <RequireAuth>
-                  <AppLayout />
-                </RequireAuth>
-              }
-            >
-              <Route index element={<DashboardPage />} />
-              <Route path="checks" element={<HistoryPage />} />
-              <Route path="partners" element={<PartnersPage />} />
-              <Route path="checks/new" element={<NewCheckPage />} />
-              <Route path="checks/:checkId" element={<CheckResultPage />} />
-              <Route path="partners/:partnerId" element={<PartnerDetailPage />} />
-              <Route path="settings/api-tokens" element={<ApiTokensPage />} />
-              <Route path="settings/users" element={<UsersPage />} />
-              <Route path="settings/organization" element={<OrganizationSettingsPage />} />
-              <Route path="settings/security-log" element={<SecurityLogPage />} />
-              <Route path="admin/organizations" element={<OrganizationsPage />} />
-              <Route path="*" element={<NotFoundPage />} />
-            </Route>
-          </Routes>
-        </Suspense>
-      </TooltipProvider>
-    </BrowserRouter>
+    <TooltipProvider>
+      <AppRouter />
+    </TooltipProvider>
   )
 }
+
+/*
+ * A data router (not <BrowserRouter>): only it runs React Router's `viewTransition`, which the
+ * page links use for the page transition (index.css). Created once, after the sign-in state is
+ * known, like the router before it.
+ */
+function AppRouter() {
+  const [router] = useState(() => createBrowserRouter(routes))
+  return <RouterProvider router={router} />
+}
+
+const routes = createRoutesFromElements(
+  <Route
+    element={
+      <Suspense fallback={null}>
+        <Outlet />
+      </Suspense>
+    }
+  >
+    <Route path="/sign-in" element={<SignInPage />} />
+    <Route path="/register" element={<RegistrationPage />} />
+    {/* Keycloak sends the user back here; the code is handled before the router starts. */}
+    <Route path="/auth/callback" element={<Navigate to="/" replace />} />
+    <Route
+      element={
+        <RequireAuth publicHome={<LandingPage />}>
+          <AppLayout />
+        </RequireAuth>
+      }
+    >
+      <Route index element={<DashboardPage />} />
+      <Route path="checks" element={<HistoryPage />} />
+      <Route path="partners" element={<PartnersPage />} />
+      <Route path="checks/new" element={<NewCheckPage />} />
+      <Route path="checks/:checkId" element={<CheckResultPage />} />
+      <Route path="partners/:partnerId" element={<PartnerDetailPage />} />
+      <Route path="settings/api-tokens" element={<ApiTokensPage />} />
+      <Route path="settings/users" element={<UsersPage />} />
+      <Route path="settings/organization" element={<OrganizationSettingsPage />} />
+      <Route path="settings/security-log" element={<SecurityLogPage />} />
+      <Route path="admin/organizations" element={<OrganizationsPage />} />
+      <Route path="*" element={<NotFoundPage />} />
+    </Route>
+  </Route>,
+)
 
 export default App
