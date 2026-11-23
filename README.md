@@ -131,7 +131,7 @@ lost: admin console → Users → `admin@bizpartnercheck.local` → Credentials 
 - Firmenbuch check: API key, statuses, stored data and what to verify: [docs/firmenbuch.md](docs/firmenbuch.md)
 - GISA licence check: personal API key, statuses, licence list and what to verify: [docs/gisa.md](docs/gisa.md)
 - Self-registration of new organisations (`/register`, e-mail link in Mailpit): [docs/registration.md](docs/registration.md)
-- Partner directory: search, sorting, archive, delete, partner page: [docs/partner-directory.md](docs/partner-directory.md)
+- Partner directory: search, sorting, archive, partner page: [docs/partner-directory.md](docs/partner-directory.md)
 - Landing page for visitors (glass cube, globe, how the maps are generated): [docs/landing-page.md](docs/landing-page.md)
 - Look of the app: light/dark theme, page transitions: [docs/look-and-feel.md](docs/look-and-feel.md)
 - Video guides on the dashboard and how to record them again: [docs/video-guides.md](docs/video-guides.md)
