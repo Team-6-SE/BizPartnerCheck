@@ -1,5 +1,5 @@
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from typing import Annotated
 
@@ -60,9 +60,16 @@ class PartnerCreate(BaseModel):
 
 
 class PartnerUpdate(BaseModel):
-    """Fields that can be edited for an existing partner."""
+    """Fields that can be edited for an existing partner.
+
+    The company name can always be changed. A VAT number or company register number
+    can only be added while the partner has none: a number that is already set
+    identifies the partner in its stored checks and is never changed or removed.
+    """
 
     company_name: str | None = Field(default=None, max_length=255)
+    vat_number: str | None = None
+    company_register_number: str | None = None
 
 
 class RegisterFlag(BaseModel):
@@ -581,7 +588,11 @@ def update_partner(
     db: DbSession,
     organization_id: OrganizationId,
 ) -> Partner:
-    """Update the editable details of a partner."""
+    """Update the company name and add a missing VAT or company register number.
+
+    A number that is already set is never changed or removed (409 identifier_locked):
+    the stored checks were made with it (docs/partner-directory.md).
+    """
 
     partner = db.scalar(
         select(Partner).where(
@@ -597,17 +608,104 @@ def update_partner(
             "This partner does not exist.",
         )
 
+    vat_number = _added_identifier(
+        body, "vat_number", partner.vat_number, validate_vat_number
+    )
+    register_number = _added_identifier(
+        body,
+        "company_register_number",
+        partner.company_register_number,
+        validate_register_number,
+    )
+    if vat_number is not None and db.scalar(
+        select(Partner.id).where(
+            Partner.organization_id == organization_id,
+            Partner.vat_number == vat_number,
+        )
+    ):
+        raise _duplicate_vat(vat_number)
+    if register_number is not None and db.scalar(
+        select(Partner.id).where(
+            Partner.organization_id == organization_id,
+            Partner.company_register_number == register_number,
+        )
+    ):
+        raise _duplicate_register(register_number)
+
     if "company_name" in body.model_fields_set:
         partner.company_name = (
             body.company_name.strip()
             if body.company_name and body.company_name.strip()
             else None
         )
+    if vat_number is not None:
+        partner.vat_number = vat_number
+    if register_number is not None:
+        partner.company_register_number = register_number
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        # Two requests at the same time: the unique constraint catches the second one.
+        constraint = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
+        if constraint == UNIQUE_VAT_CONSTRAINT and vat_number is not None:
+            raise _duplicate_vat(vat_number) from exc
+        if constraint == UNIQUE_REGISTER_CONSTRAINT and register_number is not None:
+            raise _duplicate_register(register_number) from exc
+        raise
     db.refresh(partner)
 
     return partner
+
+
+def _added_identifier(
+    body: PartnerUpdate,
+    field: str,
+    current: str | None,
+    validate: Callable[[str], str],
+) -> str | None:
+    """The normalised number to add, None if nothing changes, or a 409/422.
+
+    Sending the number the partner already has (in any spelling) or an empty value
+    for a missing number changes nothing. A different number, or an empty value for
+    a number that is set, is refused: stored checks were made with that number.
+    """
+    if field not in body.model_fields_set:
+        return None
+    value = getattr(body, field)
+    if _blank(value):
+        if current is not None:
+            raise _identifier_locked(field)
+        return None
+    try:
+        number = validate(value or "")
+    except (InvalidVatNumber, InvalidRegisterNumber) as exc:
+        code = (
+            "invalid_vat_format"
+            if field == "vat_number"
+            else "invalid_register_number_format"
+        )
+        raise api_error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, code, str(exc), field=field
+        ) from exc
+    if current is None:
+        return number
+    if number == current:
+        return None
+    raise _identifier_locked(field)
+
+
+def _identifier_locked(field: str) -> HTTPException:
+    name = "VAT number" if field == "vat_number" else "company register number"
+    return api_error(
+        status.HTTP_409_CONFLICT,
+        "identifier_locked",
+        f"The {name} of a partner cannot be changed or removed, because its checks "
+        "were made with it. To use another number, archive this partner and add it "
+        "again.",
+        field=field,
+    )
 
 
 # Archives a partner without deleting its verification history.

@@ -22,9 +22,18 @@ partner was archived), the web app jumps to the last page.
 
 ## Edit
 
-Only the company name can be changed (`PATCH /api/v1/partners/{id}`). VAT and register number identify the partner
-and are part of every stored check, so they are not edited; a wrong number means archiving the partner and adding it
-again. Editing never changes stored check results.
+`PATCH /api/v1/partners/{id}` changes the company name and can **add a missing number**: a partner added with only a
+VAT number can get its company register number later (then the Firmenbuch and GISA can check it), and the other way
+round. In the web app, **Edit** shows an extra field for each number the partner does not have yet.
+
+A number that is already set is **never changed or removed**: it identifies the partner in its stored checks, so
+those checks must not look like evidence about another company. Sending a different number, or an empty value for a
+set number, gives `409 identifier_locked`; a wrong number means archiving the partner and adding it again. Sending
+the number the partner already has (in any spelling, e.g. `FN 123456 a`) changes nothing.
+
+- The new number is checked like on creation: `422 invalid_vat_format` / `invalid_register_number_format`, and
+  `409 duplicate_partner` if another partner of the organisation has it. Nothing is saved when one field is refused.
+- Editing never changes stored check results. Run the check again to ask the sources about the new number.
 
 ## Archive and restore
 

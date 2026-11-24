@@ -113,6 +113,10 @@ export function PartnersPage() {
   // Edit form state.
   const [editingPartnerId, setEditingPartnerId] = useState<string | null>(null)
   const [editedCompanyName, setEditedCompanyName] = useState('')
+  // Missing numbers can be added while editing; numbers that are set stay as they are.
+  const [addedVatNumber, setAddedVatNumber] = useState('')
+  const [addedRegisterNumber, setAddedRegisterNumber] = useState('')
+  const [editError, setEditError] = useState<string | null>(null)
   const [savingEdit, setSavingEdit] = useState(false)
 
   // Add-partner form state.
@@ -356,10 +360,30 @@ export function PartnersPage() {
     }
   }
 
+  function startEditing(partner: Partner) {
+    setEditingPartnerId(partner.id)
+    setEditedCompanyName(partner.company_name ?? '')
+    setAddedVatNumber('')
+    setAddedRegisterNumber('')
+    setEditError(null)
+  }
+
+  function stopEditing() {
+    setEditingPartnerId(null)
+    setEditedCompanyName('')
+    setAddedVatNumber('')
+    setAddedRegisterNumber('')
+    setEditError(null)
+  }
+
   async function handleSaveEdit(partner: Partner) {
     try {
       setSavingEdit(true)
-      const updated = await updatePartner(partner.id, editedCompanyName.trim() || null)
+      const updated = await updatePartner(partner.id, {
+        companyName: editedCompanyName.trim() || null,
+        vatNumber: partner.vat_number ? undefined : addedVatNumber.trim(),
+        companyRegisterNumber: partner.company_register_number ? undefined : addedRegisterNumber.trim(),
+      })
       // The update answer has no check results: keep the ones already shown.
       updateInLists(partner.id, (item) => ({
         ...updated,
@@ -369,10 +393,11 @@ export function PartnersPage() {
         latest_firmenbuch_check: item.latest_firmenbuch_check,
         latest_gisa_check: item.latest_gisa_check,
       }))
-      setEditingPartnerId(null)
-      setEditedCompanyName('')
+      stopEditing()
       setAnnouncement(`${partnerLabel(updated)} updated.`)
     } catch (error) {
+      // Shown next to the form too: e.g. a wrong or already used number.
+      setEditError(errorMessage(error))
       setAnnouncement(`Could not update partner. ${errorMessage(error)}`)
     } finally {
       setSavingEdit(false)
@@ -658,6 +683,25 @@ export function PartnersPage() {
                                 placeholder="Company name"
                                 aria-label="Edit company name"
                               />
+                              {!partner.vat_number && (
+                                <Input
+                                  value={addedVatNumber}
+                                  onChange={(event) => setAddedVatNumber(event.target.value)}
+                                  placeholder="Add VAT number, e.g. ATU12345678"
+                                  aria-label="Add VAT number"
+                                  className="font-mono"
+                                />
+                              )}
+                              {!partner.company_register_number && (
+                                <Input
+                                  value={addedRegisterNumber}
+                                  onChange={(event) => setAddedRegisterNumber(event.target.value)}
+                                  placeholder="Add company register number, e.g. 123456a"
+                                  aria-label="Add company register number"
+                                  className="font-mono"
+                                />
+                              )}
+                              {editError && <p className="text-sm text-destructive">{editError}</p>}
                               <div className="flex gap-2">
                                 <Button size="sm" disabled={savingEdit} onClick={() => handleSaveEdit(partner)}>
                                   {savingEdit ? 'Saving…' : 'Save'}
@@ -666,10 +710,7 @@ export function PartnersPage() {
                                   size="sm"
                                   variant="outline"
                                   disabled={savingEdit}
-                                  onClick={() => {
-                                    setEditingPartnerId(null)
-                                    setEditedCompanyName('')
-                                  }}
+                                  onClick={stopEditing}
                                 >
                                   Cancel
                                 </Button>
@@ -688,10 +729,7 @@ export function PartnersPage() {
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  onClick={() => {
-                                    setEditingPartnerId(partner.id)
-                                    setEditedCompanyName(partner.company_name ?? '')
-                                  }}
+                                  onClick={() => startEditing(partner)}
                                 >
                                   Edit
                                 </Button>

@@ -143,15 +143,23 @@ export function listPartnerChecks(
     `/partners/${encodeURIComponent(partnerId)}/checks`,
   )
 }
-// Updates the company name of an existing partner.
-export function updatePartner(
-  partnerId: string,
-  companyName: string | null,
-): Promise<Partner> {
+export type PartnerChanges = {
+  companyName: string | null
+  /** Only for a partner without a VAT number: a set number cannot be changed. */
+  vatNumber?: string
+  /** Only for a partner without a company register number. */
+  companyRegisterNumber?: string
+}
+
+/** Updates the company name and adds a missing VAT or company register number. */
+export function updatePartner(partnerId: string, changes: PartnerChanges): Promise<Partner> {
   return request<Partner>(`/partners/${encodeURIComponent(partnerId)}`, {
     method: 'PATCH',
     body: JSON.stringify({
-      company_name: companyName,
+      company_name: changes.companyName,
+      // Empty fields are not sent, so a number that is set is never touched.
+      ...(changes.vatNumber ? { vat_number: changes.vatNumber } : {}),
+      ...(changes.companyRegisterNumber ? { company_register_number: changes.companyRegisterNumber } : {}),
     }),
   })
 }
