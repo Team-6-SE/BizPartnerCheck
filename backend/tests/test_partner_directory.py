@@ -72,6 +72,126 @@ def test_edit_without_fields_changes_nothing(client: TestClient) -> None:
     assert response.json()["company_name"] == "Old GmbH"
 
 
+# --- Adding a missing identifier (T3.3.3) -----------------------------------
+
+
+def test_edit_adds_a_missing_register_number_and_keeps_all_checks(
+    client: TestClient,
+) -> None:
+    partner = add_partner(client, vat_number="ATU12345678")
+    first = client.post(f"/api/v1/partners/{partner['id']}/checks/vies").json()
+
+    response = client.patch(
+        f"/api/v1/partners/{partner['id']}",
+        json={"company_register_number": "FN 123456 a"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["company_register_number"] == "123456a"
+    assert body["vat_number"] == "ATU12345678"
+    history = client.get(f"/api/v1/partners/{partner['id']}/checks").json()
+    assert [check["id"] for check in history] == [first["id"]]
+
+
+def test_edit_adds_a_missing_vat_number(client: TestClient) -> None:
+    partner = add_partner(client, company_register_number="123456a")
+
+    response = client.patch(
+        f"/api/v1/partners/{partner['id']}", json={"vat_number": "atu 1234 5678"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["vat_number"] == "ATU12345678"
+
+
+def test_edit_never_changes_a_number_that_is_set(client: TestClient) -> None:
+    partner = add_partner(client, vat_number="ATU12345678")
+
+    response = client.patch(
+        f"/api/v1/partners/{partner['id']}", json={"vat_number": "ATU87654321"}
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "identifier_locked"
+    assert response.json()["detail"]["field"] == "vat_number"
+    stored = client.get(f"/api/v1/partners/{partner['id']}").json()
+    assert stored["vat_number"] == "ATU12345678"
+
+
+def test_edit_never_removes_a_number_that_is_set(client: TestClient) -> None:
+    partner = add_partner(
+        client, vat_number="ATU12345678", company_register_number="123456a"
+    )
+
+    response = client.patch(
+        f"/api/v1/partners/{partner['id']}", json={"company_register_number": ""}
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "identifier_locked"
+
+
+def test_edit_with_the_same_number_in_another_spelling_changes_nothing(
+    client: TestClient,
+) -> None:
+    partner = add_partner(
+        client, vat_number="ATU12345678", company_register_number="123456a"
+    )
+
+    response = client.patch(
+        f"/api/v1/partners/{partner['id']}",
+        json={
+            "vat_number": "atu12345678",
+            "company_register_number": "FN 123456 a",
+            "company_name": "Same GmbH",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["company_name"] == "Same GmbH"
+
+
+def test_edit_with_an_empty_missing_number_changes_nothing(client: TestClient) -> None:
+    partner = add_partner(client, vat_number="ATU12345678")
+
+    response = client.patch(
+        f"/api/v1/partners/{partner['id']}", json={"company_register_number": "  "}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["company_register_number"] is None
+
+
+def test_edit_refuses_an_invalid_number_and_changes_nothing(client: TestClient) -> None:
+    partner = add_partner(client, vat_number="ATU12345678")
+
+    response = client.patch(
+        f"/api/v1/partners/{partner['id']}",
+        json={"company_register_number": "not a number", "company_name": "X GmbH"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "invalid_register_number_format"
+    stored = client.get(f"/api/v1/partners/{partner['id']}").json()
+    assert stored["company_register_number"] is None
+    assert stored["company_name"] is None
+
+
+def test_edit_refuses_a_number_another_partner_has(client: TestClient) -> None:
+    add_partner(client, vat_number="ATU11111111", company_register_number="123456a")
+    partner = add_partner(client, vat_number="ATU12345678")
+
+    response = client.patch(
+        f"/api/v1/partners/{partner['id']}",
+        json={"company_register_number": "123456a"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "duplicate_partner"
+    assert response.json()["detail"]["field"] == "company_register_number"
+
+
 # --- Archive and restore (T3.2.3) -------------------------------------------
 
 
