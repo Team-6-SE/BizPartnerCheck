@@ -98,7 +98,9 @@ class OverallRead(BaseModel):
     disclaimer: str = DISCLAIMER
 
     @classmethod
-    def from_run(cls, run: CheckRun, results: list[CheckResult]) -> "OverallRead | None":
+    def from_run(
+        cls, run: CheckRun, results: list[CheckResult]
+    ) -> "OverallRead | None":
         if run.status == RUNNING:
             return None
         result = overall_result(run.sources, {r.source: r.status for r in results})
