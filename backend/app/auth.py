@@ -231,6 +231,8 @@ def require_business_role(request: Request, user: AuthenticatedUser) -> CurrentU
     if not (user.roles & allowed):
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
-            detail=error_body("forbidden", "You do not have permission to do this.")["detail"],
+            detail=error_body("forbidden", "You do not have permission to do this.")[
+                "detail"
+            ],
         )
     return user

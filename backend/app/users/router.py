@@ -59,9 +59,12 @@ def _present(directory: KeycloakDirectory, user: dict[str, Any]) -> dict[str, An
     }
 
 
-def _ensure_other_admin(directory: KeycloakDirectory, organization_id: uuid.UUID, target_id: str) -> None:
+def _ensure_other_admin(
+    directory: KeycloakDirectory, organization_id: uuid.UUID, target_id: str
+) -> None:
     other_admins = [
-        u for u in directory.list_users(organization_id)
+        u
+        for u in directory.list_users(organization_id)
         if u["id"] != target_id
         and u.get("enabled")
         and u.get("emailVerified")
@@ -75,29 +78,46 @@ def _ensure_other_admin(directory: KeycloakDirectory, organization_id: uuid.UUID
         )
 
 
-def _verify_active_admin(admin: CurrentUser, directory: KeycloakDirectory, organization_id: uuid.UUID) -> None:
+def _verify_active_admin(
+    admin: CurrentUser, directory: KeycloakDirectory, organization_id: uuid.UUID
+) -> None:
     """Recheck permissions against Keycloak so removed/disabled admins cannot reuse old JWTs."""
     try:
         admin_id = uuid.UUID(admin.id)
         profile = directory.get_user(admin_id, organization_id)
     except (ValueError, TypeError) as exc:
-        raise api_error(403, "forbidden", "Only active organisation admins can manage users.") from exc
+        raise api_error(
+            403, "forbidden", "Only active organisation admins can manage users."
+        ) from exc
     except Exception as exc:
         if getattr(exc, "status_code", None) == 404:
-            raise api_error(403, "forbidden", "Only active organisation admins can manage users.") from exc
+            raise api_error(
+                403, "forbidden", "Only active organisation admins can manage users."
+            ) from exc
         raise
-    if not profile.get("enabled") or "org-admin" not in directory.assigned_roles(admin.id):
-        raise api_error(403, "forbidden", "Only active organisation admins can manage users.")
+    if not profile.get("enabled") or "org-admin" not in directory.assigned_roles(
+        admin.id
+    ):
+        raise api_error(
+            403, "forbidden", "Only active organisation admins can manage users."
+        )
 
 
 @router.get("")
-def list_users(_admin: OrgAdmin, directory: Directory, organization_id: OrganizationId) -> list[dict[str, Any]]:
+def list_users(
+    _admin: OrgAdmin, directory: Directory, organization_id: OrganizationId
+) -> list[dict[str, Any]]:
     _verify_active_admin(_admin, directory, organization_id)
     return [_present(directory, u) for u in directory.list_users(organization_id)]
 
 
 @router.post("/invitations", status_code=status.HTTP_201_CREATED)
-def invite_user(body: InviteUser, _admin: OrgAdmin, directory: Directory, organization_id: OrganizationId) -> dict[str, Any]:
+def invite_user(
+    body: InviteUser,
+    _admin: OrgAdmin,
+    directory: Directory,
+    organization_id: OrganizationId,
+) -> dict[str, Any]:
     _verify_active_admin(_admin, directory, organization_id)
     email = body.email.strip().lower()
     if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
@@ -110,19 +130,30 @@ def invite_user(body: InviteUser, _admin: OrgAdmin, directory: Directory, organi
 
 
 @router.post("/{user_id}/resend-invitation")
-def resend_invitation(user_id: uuid.UUID, _admin: OrgAdmin, directory: Directory, organization_id: OrganizationId) -> dict[str, str]:
+def resend_invitation(
+    user_id: uuid.UUID,
+    _admin: OrgAdmin,
+    directory: Directory,
+    organization_id: OrganizationId,
+) -> dict[str, str]:
     _verify_active_admin(_admin, directory, organization_id)
     user = directory.get_user(user_id, organization_id)
     if user.get("emailVerified"):
-        raise api_error(409, "already_verified", "This user has already verified their email.")
+        raise api_error(
+            409, "already_verified", "This user has already verified their email."
+        )
     directory.send_invitation(user["id"])
     return {"message": "Invitation sent."}
 
 
 @router.patch("/{user_id}/role")
 def change_role(
-    user_id: uuid.UUID, body: ChangeRole, _admin: OrgAdmin, directory: Directory,
-    organization_id: OrganizationId, db: DbSession,
+    user_id: uuid.UUID,
+    body: ChangeRole,
+    _admin: OrgAdmin,
+    directory: Directory,
+    organization_id: OrganizationId,
+    db: DbSession,
 ) -> dict[str, Any]:
     _scoped_lock(db, organization_id)
     try:
@@ -139,14 +170,22 @@ def change_role(
 
 @router.patch("/{user_id}/status")
 def change_status(
-    user_id: uuid.UUID, body: ChangeStatus, _admin: OrgAdmin, directory: Directory,
-    organization_id: OrganizationId, db: DbSession,
+    user_id: uuid.UUID,
+    body: ChangeStatus,
+    _admin: OrgAdmin,
+    directory: Directory,
+    organization_id: OrganizationId,
+    db: DbSession,
 ) -> dict[str, Any]:
     _scoped_lock(db, organization_id)
     try:
         _verify_active_admin(_admin, directory, organization_id)
         user = directory.get_user(user_id, organization_id)
-        if not body.enabled and user.get("enabled") and _current_role(directory, user["id"]) == "org-admin":
+        if (
+            not body.enabled
+            and user.get("enabled")
+            and _current_role(directory, user["id"]) == "org-admin"
+        ):
             _ensure_other_admin(directory, organization_id, user["id"])
         directory.set_enabled(user["id"], body.enabled)
         return _present(directory, directory.get_user(user_id, organization_id))
@@ -156,8 +195,11 @@ def change_status(
 
 @router.delete("/{user_id}")
 def delete_user(
-    user_id: uuid.UUID, _admin: OrgAdmin, directory: Directory,
-    organization_id: OrganizationId, db: DbSession,
+    user_id: uuid.UUID,
+    _admin: OrgAdmin,
+    directory: Directory,
+    organization_id: OrganizationId,
+    db: DbSession,
 ) -> dict[str, str]:
     _scoped_lock(db, organization_id)
     try:

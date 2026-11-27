@@ -45,9 +45,13 @@ class KeycloakDirectory:
                 "User management is temporarily unavailable.",
             ) from exc
         if response.status_code == 404:
-            raise api_error(status.HTTP_404_NOT_FOUND, "user_not_found", "User not found.")
+            raise api_error(
+                status.HTTP_404_NOT_FOUND, "user_not_found", "User not found."
+            )
         if response.status_code == 409:
-            raise api_error(status.HTTP_409_CONFLICT, "user_exists", "This email is already in use.")
+            raise api_error(
+                status.HTTP_409_CONFLICT, "user_exists", "This email is already in use."
+            )
         if response.status_code not in (200, 201, 204):
             raise api_error(
                 status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -63,12 +67,20 @@ class KeycloakDirectory:
                 "GET", "/users", params={"first": page * PAGE_SIZE, "max": PAGE_SIZE}
             ).json()
             if not isinstance(users, list):
-                raise api_error(503, "user_directory_unavailable", "Invalid user directory response.")
+                raise api_error(
+                    503,
+                    "user_directory_unavailable",
+                    "Invalid user directory response.",
+                )
             found.extend(u for u in users if self._belongs(u, organization_id))
             if len(users) < PAGE_SIZE:
                 return found
         # Never silently hide users: that could break the last-admin protection.
-        raise api_error(503, "user_directory_too_large", "The user directory is too large to manage safely.")
+        raise api_error(
+            503,
+            "user_directory_too_large",
+            "The user directory is too large to manage safely.",
+        )
 
     @staticmethod
     def _belongs(user: dict[str, Any], organization_id: uuid.UUID) -> bool:
@@ -81,7 +93,9 @@ class KeycloakDirectory:
         except (ValueError, TypeError, AttributeError):
             return False
 
-    def get_user(self, user_id: uuid.UUID, organization_id: uuid.UUID) -> dict[str, Any]:
+    def get_user(
+        self, user_id: uuid.UUID, organization_id: uuid.UUID
+    ) -> dict[str, Any]:
         user = self._request("GET", f"/users/{user_id}").json()
         if not self._belongs(user, organization_id):
             # Never reveal whether a user exists in another organisation.
@@ -90,7 +104,11 @@ class KeycloakDirectory:
 
     def assigned_roles(self, user_id: str) -> set[str]:
         roles = self._request("GET", f"/users/{user_id}/role-mappings/realm").json()
-        return {r["name"] for r in roles if isinstance(r, dict) and isinstance(r.get("name"), str)}
+        return {
+            r["name"]
+            for r in roles
+            if isinstance(r, dict) and isinstance(r.get("name"), str)
+        }
 
     def _role(self, role: str) -> dict[str, Any]:
         if role not in MANAGED_ROLES:
@@ -100,20 +118,30 @@ class KeycloakDirectory:
             return self._request("GET", f"/roles/{role}").json()
         except Exception as exc:
             if getattr(exc, "status_code", None) == 404:
-                raise api_error(503, "role_not_configured", "Configure the organisation roles in Keycloak first.") from exc
+                raise api_error(
+                    503,
+                    "role_not_configured",
+                    "Configure the organisation roles in Keycloak first.",
+                ) from exc
             raise
 
     def update_role(self, user_id: str, role: str) -> None:
         desired = self._role(role)
         assigned = self.assigned_roles(user_id) & MANAGED_ROLES
         if role not in assigned:
-            self._request("POST", f"/users/{user_id}/role-mappings/realm", json=[desired])
+            self._request(
+                "POST", f"/users/{user_id}/role-mappings/realm", json=[desired]
+            )
         for old in assigned - {role}:
             previous = self._role(old)
-            self._request("DELETE", f"/users/{user_id}/role-mappings/realm", json=[previous])
+            self._request(
+                "DELETE", f"/users/{user_id}/role-mappings/realm", json=[previous]
+            )
         self._request("POST", f"/users/{user_id}/logout")
 
-    def invite(self, email: str, name: str, organization_id: uuid.UUID, role: str) -> dict[str, Any]:
+    def invite(
+        self, email: str, name: str, organization_id: uuid.UUID, role: str
+    ) -> dict[str, Any]:
         # Resolve the selected role before creating anything.
         selected = self._role(role)
         parts = name.strip().split(maxsplit=1)
@@ -133,9 +161,15 @@ class KeycloakDirectory:
         try:
             uuid.UUID(user_id)
         except ValueError as exc:
-            raise api_error(503, "user_directory_unavailable", "Could not identify the invited user.") from exc
+            raise api_error(
+                503,
+                "user_directory_unavailable",
+                "Could not identify the invited user.",
+            ) from exc
         try:
-            self._request("POST", f"/users/{user_id}/role-mappings/realm", json=[selected])
+            self._request(
+                "POST", f"/users/{user_id}/role-mappings/realm", json=[selected]
+            )
             self.send_invitation(user_id)
             return self._request("GET", f"/users/{user_id}").json()
         except Exception:
@@ -145,7 +179,8 @@ class KeycloakDirectory:
 
     def send_invitation(self, user_id: str) -> None:
         self._request(
-            "PUT", f"/users/{user_id}/execute-actions-email",
+            "PUT",
+            f"/users/{user_id}/execute-actions-email",
             params={
                 "client_id": "bizpartnercheck-web",
                 "redirect_uri": self._client.app_url,
