@@ -62,15 +62,7 @@ def _present(directory: KeycloakDirectory, user: dict[str, Any]) -> dict[str, An
 def _ensure_other_admin(
     directory: KeycloakDirectory, organization_id: uuid.UUID, target_id: str
 ) -> None:
-    other_admins = [
-        u
-        for u in directory.list_users(organization_id)
-        if u["id"] != target_id
-        and u.get("enabled")
-        and u.get("emailVerified")
-        and "org-admin" in directory.assigned_roles(u["id"])
-    ]
-    if not other_admins:
+    if not directory.other_active_admin_exists(organization_id, target_id):
         raise api_error(
             status.HTTP_409_CONFLICT,
             "last_admin",
@@ -103,12 +95,29 @@ def _verify_active_admin(
         )
 
 
+def _manageable_target(
+    directory: KeycloakDirectory, user_id: uuid.UUID, organization_id: uuid.UUID
+) -> dict[str, Any]:
+    user = directory.get_user(user_id, organization_id)
+    if "platform-admin" in directory.assigned_roles(user["id"]):
+        raise api_error(
+            403,
+            "platform_admin_protected",
+            "Platform admins cannot be managed as organisation members.",
+        )
+    return user
+
+
 @router.get("")
 def list_users(
     _admin: OrgAdmin, directory: Directory, organization_id: OrganizationId
 ) -> list[dict[str, Any]]:
     _verify_active_admin(_admin, directory, organization_id)
-    return [_present(directory, u) for u in directory.list_users(organization_id)]
+    return [
+        _present(directory, u)
+        for u in directory.list_users(organization_id)
+        if "platform-admin" not in directory.assigned_roles(u["id"])
+    ]
 
 
 @router.post("/invitations", status_code=status.HTTP_201_CREATED)
@@ -137,7 +146,7 @@ def resend_invitation(
     organization_id: OrganizationId,
 ) -> dict[str, str]:
     _verify_active_admin(_admin, directory, organization_id)
-    user = directory.get_user(user_id, organization_id)
+    user = _manageable_target(directory, user_id, organization_id)
     if user.get("emailVerified"):
         raise api_error(
             409, "already_verified", "This user has already verified their email."
@@ -158,7 +167,7 @@ def change_role(
     _scoped_lock(db, organization_id)
     try:
         _verify_active_admin(_admin, directory, organization_id)
-        user = directory.get_user(user_id, organization_id)
+        user = _manageable_target(directory, user_id, organization_id)
         old = _current_role(directory, user["id"])
         if old == "org-admin" and body.role != "org-admin" and user.get("enabled"):
             _ensure_other_admin(directory, organization_id, user["id"])
@@ -180,7 +189,7 @@ def change_status(
     _scoped_lock(db, organization_id)
     try:
         _verify_active_admin(_admin, directory, organization_id)
-        user = directory.get_user(user_id, organization_id)
+        user = _manageable_target(directory, user_id, organization_id)
         if (
             not body.enabled
             and user.get("enabled")
@@ -204,7 +213,7 @@ def delete_user(
     _scoped_lock(db, organization_id)
     try:
         _verify_active_admin(_admin, directory, organization_id)
-        user = directory.get_user(user_id, organization_id)
+        user = _manageable_target(directory, user_id, organization_id)
         if user.get("enabled") and _current_role(directory, user["id"]) == "org-admin":
             _ensure_other_admin(directory, organization_id, user["id"])
         directory.delete(user["id"])

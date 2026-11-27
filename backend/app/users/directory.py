@@ -9,7 +9,7 @@ from collections.abc import Iterator
 from typing import Annotated, Any
 
 import httpx2 as httpx
-from fastapi import Depends, status
+from fastapi import Depends, HTTPException, status
 
 from app.errors import api_error
 from app.security.keycloak_registration import (
@@ -64,7 +64,14 @@ class KeycloakDirectory:
         found: list[dict[str, Any]] = []
         for page in range(MAX_PAGES):
             users = self._request(
-                "GET", "/users", params={"first": page * PAGE_SIZE, "max": PAGE_SIZE}
+                "GET",
+                "/users",
+                params={
+                    "first": page * PAGE_SIZE,
+                    "max": PAGE_SIZE,
+                    "q": f"organization_id:{organization_id}",
+                    "briefRepresentation": "false",
+                },
             ).json()
             if not isinstance(users, list):
                 raise api_error(
@@ -109,6 +116,38 @@ class KeycloakDirectory:
             for r in roles
             if isinstance(r, dict) and isinstance(r.get("name"), str)
         }
+
+    def other_active_admin_exists(
+        self, organization_id: uuid.UUID, excluded_id: str
+    ) -> bool:
+        """Query org-admin members directly; still recheck tenant membership."""
+        for page in range(MAX_PAGES):
+            users = self._request(
+                "GET",
+                "/roles/org-admin/users",
+                params={"first": page * PAGE_SIZE, "max": PAGE_SIZE},
+            ).json()
+            if not isinstance(users, list):
+                raise api_error(
+                    503,
+                    "user_directory_unavailable",
+                    "Invalid user directory response.",
+                )
+            if any(
+                user.get("id") != excluded_id
+                and user.get("enabled")
+                and user.get("emailVerified")
+                and self._belongs(user, organization_id)
+                for user in users
+            ):
+                return True
+            if len(users) < PAGE_SIZE:
+                return False
+        raise api_error(
+            503,
+            "user_directory_too_large",
+            "The admin directory is too large to manage safely.",
+        )
 
     def _role(self, role: str) -> dict[str, Any]:
         if role not in MANAGED_ROLES:
@@ -173,21 +212,35 @@ class KeycloakDirectory:
             self.send_invitation(user_id)
             return self._request("GET", f"/users/{user_id}").json()
         except Exception:
-            # A failed e-mail or role assignment should not leave a half-created account.
-            self._request("DELETE", f"/users/{user_id}")
+            try:
+                # A failed e-mail or role assignment should not leave a half-created account.
+                self._request("DELETE", f"/users/{user_id}")
+            except Exception as cleanup_error:
+                raise api_error(
+                    status.HTTP_503_SERVICE_UNAVAILABLE,
+                    "invitation_cleanup_failed",
+                    "Invitation setup failed and the new account could not be removed. Contact an administrator.",
+                ) from cleanup_error
             raise
 
     def send_invitation(self, user_id: str) -> None:
-        self._request(
-            "PUT",
-            f"/users/{user_id}/execute-actions-email",
-            params={
-                "client_id": "bizpartnercheck-web",
-                "redirect_uri": self._client.app_url,
-                "lifespan": INVITE_LIFETIME,
-            },
-            json=["VERIFY_EMAIL", "UPDATE_PASSWORD"],
-        )
+        try:
+            self._request(
+                "PUT",
+                f"/users/{user_id}/execute-actions-email",
+                params={
+                    "client_id": "bizpartnercheck-web",
+                    "redirect_uri": self._client.app_url,
+                    "lifespan": INVITE_LIFETIME,
+                },
+                json=["VERIFY_EMAIL", "UPDATE_PASSWORD"],
+            )
+        except HTTPException as exc:
+            raise api_error(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "invitation_delivery_failed",
+                "The invitation email could not be sent. Check the email server settings and try again.",
+            ) from exc
 
     def set_enabled(self, user_id: str, enabled: bool) -> None:
         self._request("PUT", f"/users/{user_id}", json={"enabled": enabled})
