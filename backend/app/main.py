@@ -11,7 +11,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.adapters import bmf, firmenbuch, gisa, hfu, vies
 from app.adapters.fake import check_adapter_settings
-from app.auth import AuthenticatedUser, get_current_user
+from app.auth import AuthenticatedUser, get_current_user, require_business_role
 from app.bmf.background import bmf_import_schedule
 from app.bmf.router import router as bmf_admin_router
 from app.checks.router import router as runs_router
@@ -23,6 +23,7 @@ from app.partners.router import router as partners_router
 from app.registration.router import router as registration_router
 from app.security.background import security_event_sync
 from app.security.router import router as security_router
+from app.users.router import router as users_router
 
 logger = logging.getLogger(__name__)
 
@@ -125,11 +126,12 @@ def database_unavailable(_request: Request, _exc: OperationalError) -> JSONRespo
 # Everything under /api/v1 needs a valid sign-in token (secure by default:
 # new routers added here are protected automatically).
 api = APIRouter(prefix="/api/v1", dependencies=[Depends(get_current_user)])
-api.include_router(partners_router)
+api.include_router(partners_router, dependencies=[Depends(require_business_role)])
 api.include_router(organization_router)
 api.include_router(security_router)
 api.include_router(bmf_admin_router)
-api.include_router(runs_router)
+api.include_router(runs_router, dependencies=[Depends(require_business_role)])
+api.include_router(users_router)
 
 
 @api.get("/me", tags=["account"])

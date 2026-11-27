@@ -26,7 +26,7 @@ from functools import lru_cache
 from typing import Annotated, Any
 
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.errors import error_body
@@ -218,3 +218,19 @@ PlatformAdmin = Annotated[
     CurrentUser,
     Depends(require_role(PLATFORM_ADMIN_ROLE, "Only platform admins can do this.")),
 ]
+
+
+def require_business_role(request: Request, user: AuthenticatedUser) -> CurrentUser:
+    """Checker may change partners/run checks; Reviewer is read-only.
+
+    Organisation admins can manage both. Enforcement is on the backend, not UI.
+    """
+    can_write = {"org-admin", "checker"}
+    can_read = can_write | {"reviewer"}
+    allowed = can_read if request.method in ("GET", "HEAD") else can_write
+    if not (user.roles & allowed):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            detail=error_body("forbidden", "You do not have permission to do this.")["detail"],
+        )
+    return user

@@ -56,7 +56,7 @@ def test_valid_token_is_accepted(anonymous_client: TestClient, tokens) -> None:
         "id": "user-1",
         "email": "anna@example.com",
         "name": "Anna Muster",
-        "roles": [],
+        "roles": ["checker"],
     }
 
 
