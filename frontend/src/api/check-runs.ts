@@ -11,6 +11,27 @@ export type RunChange = {
   status: CheckStatus
 }
 
+/** Overall traffic light of a finished run (S5.2, backend docs/overall-result.md). */
+export type OverallLevel = 'GREEN' | 'YELLOW' | 'RED'
+
+/** What one source contributes to the overall result. */
+export type OverallReason = {
+  source: string
+  /** null: the source gave no result at all. */
+  status: CheckStatus | null
+  level: OverallLevel
+}
+
+export type OverallResult = {
+  level: OverallLevel
+  /** Why, in one to three sentences. */
+  summary: string
+  /** Every source of the run, in the run's order. */
+  reasons: OverallReason[]
+  /** The result is information only; the decision stays with the customer. */
+  disclaimer: string
+}
+
 /** One click on "Check": all sources asked for one partner (backend docs/check-runs.md). */
 export type CheckRun = {
   id: string
@@ -21,6 +42,8 @@ export type CheckRun = {
   started_at: string
   finished_at: string | null
   results: CheckResult[]
+  /** GREEN, YELLOW or RED with the reasons; null while the run is running. */
+  overall: OverallResult | null
   /** The partner's previous finished run; null for the first run (and while running). */
   previous_run_id: string | null
   /** Sources whose status changed since that run; empty while running. */

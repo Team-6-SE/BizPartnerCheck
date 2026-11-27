@@ -22,6 +22,7 @@ import {
 } from '@/api/check-runs'
 import { ChangedSince } from '@/components/check-changes'
 import { CheckResultView } from '@/components/check-result'
+import { OverallBadge } from '@/components/overall-result'
 import { PageHeader } from '@/components/page-header'
 import {
   BMF_LABELS,
@@ -33,6 +34,7 @@ import {
   sourceName,
   statusLabel,
 } from '@/lib/check-results'
+import { LEVEL_TITLES } from '@/lib/overall-result'
 import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -136,6 +138,8 @@ export function PartnersPage() {
   const [waitingSources, setWaitingSources] = useState<Record<string, string[]>>({})
   // Sources whose status changed in the partner's last run (S5.3), per partner.
   const [changes, setChanges] = useState<Record<string, RunChange[]>>({})
+  // The run each partner was just checked in, for its overall result (S5.2).
+  const [finishedRuns, setFinishedRuns] = useState<Record<string, CheckRun>>({})
   const [checkErrors, setCheckErrors] = useState<Record<string, string[]>>({})
   const [freshCheckIds, setFreshCheckIds] = useState<ReadonlySet<string>>(new Set())
   const checkingRef = useRef(new Set<string>())
@@ -318,6 +322,10 @@ export function PartnersPage() {
       const said = run.results.map(
         (result) => `${sourceName(result.source)}: ${statusLabel(result, labelsFor(result.source))}.`,
       )
+      if (run.overall) {
+        setFinishedRuns((current) => ({ ...current, [partner.id]: run }))
+        said.unshift(`Overall result: ${LEVEL_TITLES[run.overall.level]}.`)
+      }
       if (run.changes.length) {
         setChanges((current) => ({ ...current, [partner.id]: run.changes }))
         said.push(`Changed since the last check: ${run.changes.map((c) => sourceName(c.source)).join(', ')}.`)
@@ -766,6 +774,11 @@ export function PartnersPage() {
                             checking={checking}
                             onCheck={handleCheck}
                           />
+                          {finishedRuns[partner.id]?.overall && (
+                            <div className="mt-2 sm:hidden">
+                              <OverallBadge overall={finishedRuns[partner.id].overall!} runId={finishedRuns[partner.id].id} />
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell className="min-w-32 align-top whitespace-normal">
                           {waiting.includes('VIES') ? (
@@ -862,6 +875,11 @@ export function PartnersPage() {
                         </TableCell>
                         <TableCell className="text-right align-top max-sm:hidden">
                           <CheckButton partner={partner} checking={checking} onCheck={handleCheck} />
+                          {finishedRuns[partner.id]?.overall && (
+                            <div className="mt-2 flex justify-end">
+                              <OverallBadge overall={finishedRuns[partner.id].overall!} runId={finishedRuns[partner.id].id} />
+                            </div>
+                          )}
                         </TableCell>
                       </TableRow>
                     )
