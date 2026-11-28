@@ -30,7 +30,9 @@ from app.partners.vat import (
     validate_vat_number,
 )
 from app.tenancy import get_current_organization_id
-from app.db.models import CheckResult, Organization, Partner
+from app.db.models import CheckResult, CheckRun, Organization, Partner
+from app.checks.overall import Level, overall_result, sources_left_out
+from app.checks.runs import RUNNING
 
 router = APIRouter(prefix="/partners", tags=["partners"])
 
@@ -247,6 +249,15 @@ class CheckRead(BaseModel):
         )
 
 
+class LatestOverallRead(BaseModel):
+    """Overall result of the partner's latest finished check run (S5.2)."""
+
+    run_id: uuid.UUID
+    level: Level
+    summary: str
+    finished_at: datetime | None
+
+
 class PartnerRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -262,6 +273,8 @@ class PartnerRead(BaseModel):
     latest_hfu_check: CheckRead | None = None
     latest_firmenbuch_check: CheckRead | None = None
     latest_gisa_check: CheckRead | None = None
+    # GREEN, YELLOW or RED of the latest finished run; null if never checked in a run.
+    latest_overall: LatestOverallRead | None = None
 
 
 class PartnerPage(BaseModel):
@@ -487,6 +500,8 @@ def _with_latest_checks(db: Session, partners: Sequence[Partner]) -> list[Partne
         result = latest_by.get((partner.id, source))
         return CheckRead.from_result(result) if result else None
 
+    overall_by = _latest_overall(db, partners)
+
     return [
         PartnerRead(
             id=partner.id,
@@ -501,9 +516,49 @@ def _with_latest_checks(db: Session, partners: Sequence[Partner]) -> list[Partne
             latest_hfu_check=read(partner, hfu.SOURCE),
             latest_firmenbuch_check=read(partner, firmenbuch.SOURCE),
             latest_gisa_check=read(partner, gisa.SOURCE),
+            latest_overall=overall_by.get(partner.id),
         )
         for partner in partners
     ]
+
+
+def _latest_overall(
+    db: Session, partners: Sequence[Partner]
+) -> dict[uuid.UUID, LatestOverallRead]:
+    """Overall result of each partner's latest finished run (two queries for all)."""
+    by_id = {partner.id: partner for partner in partners}
+    runs = db.scalars(
+        select(CheckRun)
+        .where(CheckRun.partner_id.in_(by_id), CheckRun.status != RUNNING)
+        .order_by(CheckRun.partner_id, CheckRun.started_at.desc(), CheckRun.id.desc())
+        .ext(distinct_on(CheckRun.partner_id))
+    ).all()
+    if not runs:
+        return {}
+    statuses: dict[uuid.UUID, dict[str, str]] = {run.id: {} for run in runs}
+    for run_id, source, status_ in db.execute(
+        select(CheckResult.run_id, CheckResult.source, CheckResult.status).where(
+            CheckResult.run_id.in_(statuses)
+        )
+    ):
+        statuses[run_id][source] = status_
+    overall: dict[uuid.UUID, LatestOverallRead] = {}
+    for run in runs:
+        partner = by_id[run.partner_id]
+        result = overall_result(
+            run.sources,
+            statuses[run.id],
+            not_checked=sources_left_out(
+                run.sources, bool(partner.company_register_number)
+            ),
+        )
+        overall[run.partner_id] = LatestOverallRead(
+            run_id=run.id,
+            level=result.level,
+            summary=result.summary,
+            finished_at=run.finished_at,
+        )
+    return overall
 
 
 # Returns archived partners belonging to the current organization.

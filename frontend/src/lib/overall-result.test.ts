@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
+import type { CheckRun } from '@/api/check-runs'
 import type { CheckResult } from '@/api/partners'
-import { dataAge, duration, LEVEL_TITLES, resultKind } from '@/lib/overall-result'
+import { dataAge, duration, latestOverallOf, LEVEL_TITLES, resultKind } from '@/lib/overall-result'
 
 function check(fields: Partial<CheckResult>): CheckResult {
   return {
@@ -57,5 +58,29 @@ describe('LEVEL_TITLES', () => {
     expect(LEVEL_TITLES.RED).toBe('Red: problem found')
     expect(LEVEL_TITLES.YELLOW).toBe('Yellow: not confirmed')
     expect(LEVEL_TITLES.GREEN).toBe('Green: no problems found')
+  })
+})
+
+describe('latestOverallOf', () => {
+  const saved = { run_id: 'old-run', level: 'YELLOW' as const, summary: 'Saved.', finished_at: null }
+
+  it('shows the saved latest result after a reload', () => {
+    expect(latestOverallOf({ latest_overall: saved }, undefined)).toEqual({
+      level: 'YELLOW',
+      summary: 'Saved.',
+      runId: 'old-run',
+    })
+  })
+
+  it('prefers the run that just finished on the page', () => {
+    const run = {
+      id: 'new-run',
+      overall: { level: 'RED', summary: 'Now.', reasons: [], not_checked: [], disclaimer: '' },
+    } as unknown as CheckRun
+    expect(latestOverallOf({ latest_overall: saved }, run)).toEqual({ level: 'RED', summary: 'Now.', runId: 'new-run' })
+  })
+
+  it('shows nothing for a partner never checked in a run', () => {
+    expect(latestOverallOf({ latest_overall: null }, undefined)).toBeNull()
   })
 })

@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router'
 
 import { getCheckRun, waitForCheckRun, type CheckRun } from '@/api/check-runs'
 import { ApiError, getPartner, type Partner } from '@/api/partners'
-import { Disclaimer, OverallBanner, SourceExplanation } from '@/components/overall-result'
+import { Disclaimer, NotCheckedSource, OverallBanner, SourceExplanation } from '@/components/overall-result'
 import { PageHeader } from '@/components/page-header'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -107,6 +107,7 @@ export function CheckResultPage() {
                 }
                 return <SourceExplanation key={source} source={source} check={check} />
               })}
+              {run.overall?.not_checked.map((source) => <NotCheckedSource key={source} source={source} />)}
             </ul>
           </section>
 

@@ -53,7 +53,13 @@ export function OverallBanner({ overall }: { overall: OverallResult }) {
 }
 
 /** Small badge for lists, linking to the full result. */
-export function OverallBadge({ overall, runId }: { overall: OverallResult; runId: string }) {
+export function OverallBadge({
+  overall,
+  runId,
+}: {
+  overall: Pick<OverallResult, 'level' | 'summary'>
+  runId: string
+}) {
   return (
     <Link
       to={`/checks/${runId}`}
@@ -158,6 +164,28 @@ export function SourceExplanation({ source, check }: { source: string; check: Ch
       ) : (
         <p className="text-sm text-pretty">This source gave no answer, so its result is missing.</p>
       )}
+    </li>
+  )
+}
+
+/** A source that applies to the partner but is not set up on this server (no API key). */
+export function NotCheckedSource({ source }: { source: string }) {
+  return (
+    <li className={cn('flex flex-col gap-2 rounded-xl border p-4', KIND_STYLES.missing)}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="font-medium">{sourceName(source)}</h3>
+        <span className="flex items-center gap-1 text-xs font-medium text-amber-700 dark:text-amber-400">
+          <CircleHelpIcon aria-hidden className="size-3.5" />
+          Not checked
+        </span>
+      </div>
+      <p className="text-sm text-pretty">
+        {sourceName(source)} is not set up on this server, so it was not part of this check.
+      </p>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+        <dt>Source</dt>
+        <dd>{SOURCE_DESCRIPTIONS[source.toUpperCase()] ?? source}</dd>
+      </dl>
     </li>
   )
 }

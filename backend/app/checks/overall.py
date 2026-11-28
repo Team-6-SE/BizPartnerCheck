@@ -125,6 +125,9 @@ class OverallResult:
     summary: str
     # Every source of the run, in the run's order.
     reasons: tuple[Reason, ...]
+    # Sources that would apply to the partner but were not part of the run, because
+    # they are not set up on this server (no API key). They do not change the level.
+    not_checked: tuple[str, ...] = ()
 
     @property
     def deciding(self) -> tuple[Reason, ...]:
@@ -132,15 +135,34 @@ class OverallResult:
         return tuple(reason for reason in self.reasons if reason.level == self.level)
 
 
+# Sources that are only part of a run when their API key (or a fake) is set, and that
+# apply to partners with a company register number (app/checks/router.py, run_sources).
+OPTIONAL_REGISTER_SOURCES = ("FIRMENBUCH", "GISA")
+
+
+def sources_left_out(
+    run_sources: Iterable[str], has_register_number: bool
+) -> tuple[str, ...]:
+    """Register sources that apply to the partner but were not part of the run."""
+    if not has_register_number:
+        return ()
+    asked = {source.upper() for source in run_sources}
+    return tuple(s for s in OPTIONAL_REGISTER_SOURCES if s not in asked)
+
+
 def overall_result(
     sources: Iterable[str],
     statuses: Mapping[str, CheckStatus | str],
     rules: Rules | None = None,
+    *,
+    not_checked: Iterable[str] = (),
 ) -> OverallResult:
     """The overall level of a finished run, with its explanation.
 
     `sources` are the run's sources in order; `statuses` maps a source to its status.
-    A source missing from `statuses` gave no result.
+    A source missing from `statuses` gave no result. `not_checked` are sources that
+    apply to the partner but are not set up (sources_left_out); they only add a
+    sentence, because the run itself could not ask them.
     """
     rules = rules or Rules.from_env()
     reasons = tuple(_reason(source, statuses.get(source), rules) for source in sources)
@@ -150,10 +172,17 @@ def overall_result(
     if nothing_applied:
         reasons = tuple(Reason(r.source, r.status, Level.YELLOW) for r in reasons)
     level = max((reason.level for reason in reasons), key=SEVERITY.__getitem__)
+    left_out = tuple(not_checked)
+    summary = _summary(level, reasons, nothing_applied)
+    if left_out:
+        verb = "is" if len(left_out) == 1 else "are"
+        names = _start(_names(Reason(s, None, level) for s in left_out))
+        summary += (
+            f" {names} {verb} not set up on this server, so "
+            f"{'it was' if len(left_out) == 1 else 'they were'} not checked."
+        )
     return OverallResult(
-        level=level,
-        summary=_summary(level, reasons, nothing_applied),
-        reasons=reasons,
+        level=level, summary=summary, reasons=reasons, not_checked=left_out
     )
 
 

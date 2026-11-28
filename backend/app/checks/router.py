@@ -29,7 +29,7 @@ from app.adapters.hfu import get_hfu_adapter
 from app.adapters.vies import get_vies_adapter
 from app.auth import AuthenticatedUser
 from app.checks.executor import SessionFactory, get_session_factory
-from app.checks.overall import DISCLAIMER, Level, overall_result
+from app.checks.overall import DISCLAIMER, Level, overall_result, sources_left_out
 from app.checks.queue import RunDispatcher, get_run_dispatcher
 from app.checks.runs import (
     RUNNING,
@@ -94,16 +94,27 @@ class OverallRead(BaseModel):
     summary: str
     # Every source of the run with the level its result gives.
     reasons: list[ReasonRead]
+    # Sources that apply to the partner but are not set up on this server
+    # (e.g. no Firmenbuch API key), so the run could not ask them.
+    not_checked: list[str] = []
     # The result is information only; the decision stays with the customer.
     disclaimer: str = DISCLAIMER
 
     @classmethod
     def from_run(
-        cls, run: CheckRun, results: list[CheckResult]
+        cls,
+        run: CheckRun,
+        results: list[CheckResult],
+        *,
+        has_register_number: bool = False,
     ) -> "OverallRead | None":
         if run.status == RUNNING:
             return None
-        result = overall_result(run.sources, {r.source: r.status for r in results})
+        result = overall_result(
+            run.sources,
+            {r.source: r.status for r in results},
+            not_checked=sources_left_out(run.sources, has_register_number),
+        )
         return cls(
             level=result.level,
             summary=result.summary,
@@ -111,6 +122,7 @@ class OverallRead(BaseModel):
                 ReasonRead(source=r.source, status=r.status, level=r.level)
                 for r in result.reasons
             ],
+            not_checked=list(result.not_checked),
         )
 
 
@@ -137,6 +149,8 @@ class RunRead(BaseModel):
         run: CheckRun,
         results: list[CheckResult],
         previous: tuple[CheckRun, list[CheckResult]] | None = None,
+        *,
+        partner: Partner | None = None,
     ) -> "RunRead":
         order = {source: index for index, source in enumerate(run.sources)}
         ordered = sorted(results, key=lambda r: order.get(r.source, len(order)))
@@ -148,7 +162,11 @@ class RunRead(BaseModel):
             started_at=run.started_at,
             finished_at=run.finished_at,
             results=[CheckRead.from_result(r) for r in ordered],
-            overall=OverallRead.from_run(run, results),
+            overall=OverallRead.from_run(
+                run,
+                results,
+                has_register_number=bool(partner and partner.company_register_number),
+            ),
             previous_run_id=previous[0].id if previous else None,
             changes=_changes(results, previous[1]) if previous else [],
         )
@@ -281,7 +299,7 @@ def start_check_run(
         )
     running = _running_run(db, partner.id)
     if running is not None:
-        return RunRead.from_run(running, _results(db, running))
+        return RunRead.from_run(running, _results(db, running), partner=partner)
     run = start_run(
         db,
         organization_id=organization_id,
@@ -301,7 +319,7 @@ def start_check_run(
             "check_queue_unavailable",
             "Checks cannot start right now. Please try again in a moment.",
         ) from None
-    return RunRead.from_run(run, [])
+    return RunRead.from_run(run, [], partner=partner)
 
 
 @router.get(
@@ -326,4 +344,7 @@ def get_check_run(
     close_if_stale(db, run)
     if run.status == RUNNING:
         return RunRead.from_run(run, _results(db, run))
-    return RunRead.from_run(run, _results(db, run), _previous_run(db, run))
+    partner = db.get(Partner, run.partner_id)
+    return RunRead.from_run(
+        run, _results(db, run), _previous_run(db, run), partner=partner
+    )

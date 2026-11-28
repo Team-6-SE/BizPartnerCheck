@@ -89,6 +89,15 @@ export type Partner = {
   latest_hfu_check: CheckResult | null
   latest_firmenbuch_check?: CheckResult | null
   latest_gisa_check?: CheckResult | null
+  /** Overall result of the latest finished check run (S5.2); null if never checked in a run. */
+  latest_overall?: LatestOverall | null
+}
+
+export type LatestOverall = {
+  run_id: string
+  level: 'GREEN' | 'YELLOW' | 'RED'
+  summary: string
+  finished_at: string | null
 }
 export type PartnerPage = {
   items: Partner[]

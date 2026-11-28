@@ -34,7 +34,7 @@ import {
   sourceName,
   statusLabel,
 } from '@/lib/check-results'
-import { LEVEL_TITLES } from '@/lib/overall-result'
+import { LEVEL_TITLES, latestOverallOf } from '@/lib/overall-result'
 import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -657,6 +657,7 @@ export function PartnersPage() {
                     const checking = checkingIds.has(partner.id)
                     const waiting = waitingSources[partner.id] ?? []
                     const changed = changes[partner.id] ?? []
+                    const latestOverall = latestOverallOf(partner, finishedRuns[partner.id])
                     const viesCompanyName = check?.status === 'OK' ? check.company_name : null
                     const viesAddress = check?.status === 'OK' ? check.address : null
 
@@ -774,9 +775,9 @@ export function PartnersPage() {
                             checking={checking}
                             onCheck={handleCheck}
                           />
-                          {finishedRuns[partner.id]?.overall && (
+                          {latestOverall && (
                             <div className="mt-2 sm:hidden">
-                              <OverallBadge overall={finishedRuns[partner.id].overall!} runId={finishedRuns[partner.id].id} />
+                              <OverallBadge overall={latestOverall} runId={latestOverall.runId} />
                             </div>
                           )}
                         </TableCell>
@@ -875,9 +876,9 @@ export function PartnersPage() {
                         </TableCell>
                         <TableCell className="text-right align-top max-sm:hidden">
                           <CheckButton partner={partner} checking={checking} onCheck={handleCheck} />
-                          {finishedRuns[partner.id]?.overall && (
+                          {latestOverall && (
                             <div className="mt-2 flex justify-end">
-                              <OverallBadge overall={finishedRuns[partner.id].overall!} runId={finishedRuns[partner.id].id} />
+                              <OverallBadge overall={latestOverall} runId={latestOverall.runId} />
                             </div>
                           )}
                         </TableCell>

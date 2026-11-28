@@ -102,6 +102,61 @@ def test_partner_without_vat_number_is_green_on_what_applies(
 
     assert run["overall"]["level"] == "GREEN"
     assert "VIES and the HFU list do not apply" in run["overall"]["summary"]
+    # The tests run without Firmenbuch and GISA API keys: say they were not checked.
+    assert run["overall"]["not_checked"] == ["FIRMENBUCH", "GISA"]
+    assert run["overall"]["summary"].endswith(
+        "The Firmenbuch and GISA are not set up on this server, so they were not checked."
+    )
+
+
+def test_partner_with_vat_number_only_has_nothing_left_out(
+    client: TestClient, db: Session, admin_token: str
+) -> None:
+    import_bmf_list(db)
+    set_organization_vat(client, admin_token)
+
+    run = run_for(client, vat_number=NOT_ON_BMF_LIST)
+
+    assert run["overall"]["not_checked"] == []
+    assert "not set up" not in run["overall"]["summary"]
+
+
+def test_partner_list_shows_the_latest_overall_result(
+    client: TestClient, db: Session, admin_token: str
+) -> None:
+    import_bmf_list(db)
+    set_organization_vat(client, admin_token)
+    never_checked = client.post("/api/v1/partners", json={"vat_number": "ATU33333333"})
+    assert never_checked.status_code == 201
+    red = run_for(client, vat_number=ON_BMF_LIST)
+
+    items = {p["vat_number"]: p for p in client.get("/api/v1/partners").json()["items"]}
+    detail = client.get(f"/api/v1/partners/{red['partner_id']}").json()
+
+    assert items["ATU33333333"]["latest_overall"] is None
+    latest = items[ON_BMF_LIST]["latest_overall"]
+    assert latest["run_id"] == red["id"]
+    assert latest["level"] == "RED"
+    assert latest["summary"] == red["overall"]["summary"]
+    assert detail["latest_overall"]["run_id"] == red["id"]
+
+
+def test_partner_list_uses_the_newest_finished_run(
+    client: TestClient, db: Session, admin_token: str, fake_vies
+) -> None:
+    import_bmf_list(db)
+    set_organization_vat(client, admin_token)
+    first = run_for(client, vat_number=NOT_ON_BMF_LIST)
+    fake_vies.answer = {"error": "MS_UNAVAILABLE"}
+
+    second = client.post(f"/api/v1/partners/{first['partner_id']}/runs").json()
+
+    latest = client.get(f"/api/v1/partners/{first['partner_id']}").json()[
+        "latest_overall"
+    ]
+    assert first["overall"]["level"] == "GREEN"
+    assert latest["run_id"] == second["id"]
+    assert latest["level"] == "YELLOW"
 
 
 def test_no_overall_result_while_the_run_is_running(client: TestClient) -> None:

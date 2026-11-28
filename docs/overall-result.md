@@ -20,6 +20,11 @@ The worst level of all sources wins:
   possible match must never look like a clean result, so REVIEW is YELLOW by default (setting below).
 - A source without any result counts as missing information: always YELLOW.
 - Risk hints (E8) are not check results and never change the overall result.
+- The Firmenbuch and GISA are only part of a run when their API key is set. If a partner has a
+  company register number but one of them is not set up, the explanation says so ("The Firmenbuch is
+  not set up on this server, so it was not checked.") and `not_checked` lists it. The level does not
+  change, because the run could not ask that source at all; the result screen shows it as a
+  "Not checked" card.
 - The run is still `running`: no overall result yet (`overall: null`).
 
 ### Changing the rules
@@ -51,13 +56,21 @@ does not start with a value that is not a level either.
 ```
 
 `reasons` has every source of the run in order; `status` is `null` for a source without a result.
+`not_checked` lists sources that apply to the partner but are not set up on the server (e.g.
+`["FIRMENBUCH", "GISA"]`).
+
+The partner endpoints (`GET /api/v1/partners`, `GET /api/v1/partners/{id}`) also have
+`latest_overall` (`run_id`, `level`, `summary`, `finished_at`): the result of the partner's latest
+finished run, or `null` if it was never checked in a run. The partner list shows it as a badge, also
+after a reload.
+
 The result is computed when the run is read, not stored, so it always follows the current rules.
 The PDF report (S6.3) and the history (S6.2) can use the same function.
 
 ## Result screen
 
 `/checks/{run_id}` (link "Open the full result" on the partner page, and the coloured badge in the
-partner list after a check):
+partner list, which shows each partner's latest result):
 
 - The overall result at the top: icon **and** words ("Red: problem found"), never colour alone.
 - One card per source with status, explanation, source, retrieval time and data age (how old the
