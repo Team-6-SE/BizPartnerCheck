@@ -29,6 +29,7 @@ from app.adapters.hfu import get_hfu_adapter
 from app.adapters.vies import get_vies_adapter
 from app.auth import AuthenticatedUser
 from app.checks.executor import SessionFactory, get_session_factory
+from app.checks.overall import DISCLAIMER, Level, overall_result
 from app.checks.queue import RunDispatcher, get_run_dispatcher
 from app.checks.runs import (
     RUNNING,
@@ -76,6 +77,43 @@ class RunChange(BaseModel):
     status: CheckStatus
 
 
+class ReasonRead(BaseModel):
+    """What one source contributes to the overall result (S5.2)."""
+
+    source: str
+    # null: the source gave no result at all.
+    status: CheckStatus | None
+    level: Level
+
+
+class OverallRead(BaseModel):
+    """Overall traffic light of a finished run (S5.2, app/checks/overall.py)."""
+
+    level: Level
+    # Why, in one to three sentences.
+    summary: str
+    # Every source of the run with the level its result gives.
+    reasons: list[ReasonRead]
+    # The result is information only; the decision stays with the customer.
+    disclaimer: str = DISCLAIMER
+
+    @classmethod
+    def from_run(
+        cls, run: CheckRun, results: list[CheckResult]
+    ) -> "OverallRead | None":
+        if run.status == RUNNING:
+            return None
+        result = overall_result(run.sources, {r.source: r.status for r in results})
+        return cls(
+            level=result.level,
+            summary=result.summary,
+            reasons=[
+                ReasonRead(source=r.source, status=r.status, level=r.level)
+                for r in result.reasons
+            ],
+        )
+
+
 class RunRead(BaseModel):
     id: uuid.UUID
     partner_id: uuid.UUID
@@ -86,6 +124,8 @@ class RunRead(BaseModel):
     started_at: datetime
     finished_at: datetime | None
     results: list[CheckRead]
+    # GREEN, YELLOW or RED with the reasons (S5.2); null while the run is running.
+    overall: OverallRead | None = None
     # The partner's previous finished run, if there is one (S5.3, re-run).
     previous_run_id: uuid.UUID | None = None
     # Sources whose status changed since that run; empty while running.
@@ -108,6 +148,7 @@ class RunRead(BaseModel):
             started_at=run.started_at,
             finished_at=run.finished_at,
             results=[CheckRead.from_result(r) for r in ordered],
+            overall=OverallRead.from_run(run, results),
             previous_run_id=previous[0].id if previous else None,
             changes=_changes(results, previous[1]) if previous else [],
         )

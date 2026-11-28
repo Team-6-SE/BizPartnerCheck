@@ -39,6 +39,9 @@ order of `sources`; a source without a result is still waiting. Each result is t
 
 `404 run_not_found` for unknown runs and runs of other organisations.
 
+A finished run also has `overall`: GREEN, YELLOW or RED with the reasons (S5.2,
+[overall-result.md](overall-result.md)); it is `null` while the run is running.
+
 ## Status of a run
 
 | Status | Meaning |

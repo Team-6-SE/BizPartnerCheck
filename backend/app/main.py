@@ -14,6 +14,7 @@ from app.adapters.fake import check_adapter_settings
 from app.auth import AuthenticatedUser, get_current_user, require_business_role
 from app.bmf.background import bmf_import_schedule
 from app.bmf.router import router as bmf_admin_router
+from app.checks.overall import Rules
 from app.checks.router import router as runs_router
 from app.checks.runs import close_stale_runs_at_startup
 from app.db.session import SessionLocal
@@ -35,6 +36,8 @@ SOURCES = (vies.SOURCE, bmf.SOURCE, hfu.SOURCE, firmenbuch.SOURCE, gisa.SOURCE)
 async def lifespan(app_: FastAPI) -> AsyncIterator[None]:
     # Stops the start on a wrong {SOURCE}_ADAPTER value instead of failing every check.
     check_adapter_settings(SOURCES)
+    # The same for a wrong OVERALL_LEVEL_* value (S5.2).
+    Rules.from_env()
     if not firmenbuch.is_enabled():
         logger.warning(
             "Firmenbuch: FIRMENBUCH_API_KEY is not set, so check runs leave the "

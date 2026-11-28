@@ -1,11 +1,12 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { useNavigate, useParams } from 'react-router'
+import { Link, useNavigate, useParams } from 'react-router'
 import { SearchCheckIcon } from 'lucide-react'
 
-import { startCheckRun, waitForCheckRun, waitingSources, type RunChange } from '@/api/check-runs'
+import { startCheckRun, waitForCheckRun, waitingSources, type CheckRun, type RunChange } from '@/api/check-runs'
 import { ApiError, getPartner, listPartnerChecks, type CheckResult, type Partner } from '@/api/partners'
 import { ChangedSince, RunChangesSummary } from '@/components/check-changes'
 import { CheckResultView } from '@/components/check-result'
+import { OverallBanner } from '@/components/overall-result'
 import { PageHeader } from '@/components/page-header'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -34,6 +35,8 @@ export function PartnerDetailPage() {
   const [waiting, setWaiting] = useState<string[]>([])
   const [changes, setChanges] = useState<RunChange[] | null>(null)
   const [checkError, setCheckError] = useState('')
+  // The run just finished, for its overall result (S5.2).
+  const [finishedRun, setFinishedRun] = useState<CheckRun | null>(null)
 
   useEffect(() => {
     if (!partnerId) {
@@ -77,6 +80,7 @@ export function PartnerDetailPage() {
     setChecking(true)
     setChanges(null)
     setCheckError('')
+    setFinishedRun(null)
     let started = false
     try {
       // A re-run is a new run: earlier results stay unchanged in the history below.
@@ -88,8 +92,9 @@ export function PartnerDetailPage() {
       })
       if (run.status === 'running') {
         setCheckError('The check is taking longer than expected. Reload the page in a moment to see the results.')
-      } else if (run.previous_run_id) {
-        setChanges(run.changes)
+      } else {
+        setFinishedRun(run)
+        if (run.previous_run_id) setChanges(run.changes)
       }
       const [partnerResult, checkResults] = await Promise.all([getPartner(current.id), listPartnerChecks(current.id)])
       setPartner(partnerResult)
@@ -203,6 +208,22 @@ export function PartnerDetailPage() {
             </CardAction>
           )}
         </CardHeader>
+
+        {finishedRun?.overall && !checkError && (
+          <CardContent className="flex flex-col gap-3 pb-0">
+            <OverallBanner overall={finishedRun.overall} />
+            <div>
+              <Button
+                variant="outline"
+                size="sm"
+                nativeButton={false}
+                render={<Link to={`/checks/${finishedRun.id}`} viewTransition />}
+              >
+                Open the full result
+              </Button>
+            </div>
+          </CardContent>
+        )}
 
         {(changes || checkError) && (
           <CardContent className="pb-0" role="status" aria-live="polite">
