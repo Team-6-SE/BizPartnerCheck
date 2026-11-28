@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router'
 import { getCheckRun, waitForCheckRun, type CheckRun } from '@/api/check-runs'
 import { ApiError, getPartner, type Partner } from '@/api/partners'
 import { Disclaimer, NotCheckedSource, OverallBanner, SourceExplanation } from '@/components/overall-result'
+import { DISCLAIMER } from '@/lib/overall-result'
 import { PageHeader } from '@/components/page-header'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -111,7 +112,8 @@ export function CheckResultPage() {
             </ul>
           </section>
 
-          {run.overall && <Disclaimer text={run.overall.disclaimer} />}
+          {/* Also while the sources are still being asked (T5.2.4: visible on every result). */}
+          <Disclaimer text={run.overall?.disclaimer ?? DISCLAIMER} />
         </>
       )}
     </div>

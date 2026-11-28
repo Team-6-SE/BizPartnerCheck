@@ -6,7 +6,7 @@ import { startCheckRun, waitForCheckRun, waitingSources, type CheckRun, type Run
 import { ApiError, getPartner, listPartnerChecks, type CheckResult, type Partner } from '@/api/partners'
 import { ChangedSince, RunChangesSummary } from '@/components/check-changes'
 import { CheckResultView } from '@/components/check-result'
-import { OverallBanner } from '@/components/overall-result'
+import { Disclaimer, OverallBanner } from '@/components/overall-result'
 import { PageHeader } from '@/components/page-header'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -212,6 +212,7 @@ export function PartnerDetailPage() {
         {finishedRun?.overall && !checkError && (
           <CardContent className="flex flex-col gap-3 pb-0">
             <OverallBanner overall={finishedRun.overall} />
+            <Disclaimer text={finishedRun.overall.disclaimer} />
             <div>
               <Button
                 variant="outline"

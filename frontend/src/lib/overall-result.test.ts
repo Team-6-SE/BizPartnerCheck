@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { CheckRun } from '@/api/check-runs'
 import type { CheckResult } from '@/api/partners'
-import { dataAge, duration, latestOverallOf, LEVEL_TITLES, resultKind } from '@/lib/overall-result'
+import { DISCLAIMER, dataAge, duration, latestOverallOf, LEVEL_TITLES, resultKind } from '@/lib/overall-result'
 
 function check(fields: Partial<CheckResult>): CheckResult {
   return {
@@ -82,5 +82,14 @@ describe('latestOverallOf', () => {
 
   it('shows nothing for a partner never checked in a run', () => {
     expect(latestOverallOf({ latest_overall: null }, undefined)).toBeNull()
+  })
+})
+
+describe('DISCLAIMER', () => {
+  it('is the same text the backend sends with every result', () => {
+    expect(DISCLAIMER).toBe(
+      'This result is information only. It shows what the official sources said at the time of the check. ' +
+        'The decision whether to work with this partner stays with you.',
+    )
   })
 })
