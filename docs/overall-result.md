@@ -77,7 +77,9 @@ partner list, which shows each partner's latest result):
   imported list was; live sources say "Live answer from the source").
 - A negative result and missing information look different: a **problem** has a solid red border and
   a ✕ icon; **missing information** has a dashed amber border and a ? icon.
-- The disclaimer: the result is information only, the decision stays with the customer.
+- The disclaimer: the result is information only, the decision stays with the customer. It is shown
+  with every result: on the result screen (also while the sources are still being asked) and under the
+  overall result on the partner page. The API sends it as `overall.disclaimer`.
 
 ## Code
 
