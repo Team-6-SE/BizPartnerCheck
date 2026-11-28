@@ -126,6 +126,7 @@ lost: admin console → Users → `admin@bizpartnercheck.local` → Credentials 
 - The Keycloak setup comes from `infra/keycloak/import/bizpartnercheck-realm.json`, the look of the sign-in pages from `infra/keycloak/themes/bizpartnercheck`. After changing it, or to get a clean Keycloak: `docker compose -f infra/docker-compose.yml up -d --force-recreate keycloak`. Users created by hand are lost then.
 - How sign-in works and which settings exist: [docs/authentication.md](docs/authentication.md)
 - Second factor, roles and the security log: [docs/security-log.md](docs/security-log.md)
+- Organisation user management and Keycloak role setup: [docs/user-management.md](docs/user-management.md)
 - How external sources are connected (result format, time limits, fake sources): [docs/source-adapters.md](docs/source-adapters.md)
 - BMF fake-company list: import, matching and the 24-hour warning: [docs/bmf.md](docs/bmf.md)
 - Firmenbuch check: API key, statuses, stored data and what to verify: [docs/firmenbuch.md](docs/firmenbuch.md)
