@@ -188,7 +188,8 @@
   ]
 },
       "realmRoles": [
-        "default-roles-bizpartnercheck"
+        "default-roles-bizpartnercheck",
+        "checker"
       ],
       "credentials": [
         {
@@ -255,6 +256,14 @@
       {
         "name": "platform-admin",
         "description": "Platform admin (operator of BizPartnerCheck, not a customer): data source imports such as the BMF list (S4.3)."
+      },
+      {
+        "name": "checker",
+        "description": "Runs checks and manages partners within the organisation."
+      },
+      {
+        "name": "reviewer",
+        "description": "Views check history and reports but cannot change partners or run checks."
       }
     ]
   },

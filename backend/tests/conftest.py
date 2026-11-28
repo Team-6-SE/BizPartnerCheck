@@ -197,6 +197,7 @@ class TokenFactory:
             "email": email,
             "name": name,
             "organization_id": "00000000-0000-0000-0000-000000000001",
+            "realm_access": {"roles": ["checker"]},
         }
         claims.update(extra or {})
         for claim in omit:
