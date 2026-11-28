@@ -78,3 +78,11 @@ export function latestOverallOf(
   if (latest) return { level: latest.level, summary: latest.summary, runId: latest.run_id }
   return null
 }
+
+/**
+ * The information-only notice (T5.2.4). The backend sends the same text with every finished
+ * result (app/checks/overall.py, DISCLAIMER); this copy is shown while a run is still running.
+ */
+export const DISCLAIMER =
+  'This result is information only. It shows what the official sources said at the time of the check. ' +
+  'The decision whether to work with this partner stays with you.'
