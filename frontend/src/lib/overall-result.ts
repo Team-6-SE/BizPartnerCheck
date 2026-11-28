@@ -1,5 +1,5 @@
-import type { OverallLevel } from '@/api/check-runs'
-import type { CheckResult } from '@/api/partners'
+import type { CheckRun, OverallLevel } from '@/api/check-runs'
+import type { CheckResult, Partner } from '@/api/partners'
 
 /** Words for the overall traffic light (S5.2). Never colour alone: every level has a name and an icon. */
 
@@ -63,4 +63,18 @@ export const KIND_TEXT: Record<ResultKind, string> = {
   review: 'Please review',
   'not-applicable': 'Does not apply',
   fine: 'No problem',
+}
+
+/**
+ * The overall result to show for a partner in the list: the run just finished on this
+ * page, else the latest finished run the backend knows (so it is still there after a reload).
+ */
+export function latestOverallOf(
+  partner: Pick<Partner, 'latest_overall'>,
+  finished: CheckRun | undefined,
+): { level: OverallLevel; summary: string; runId: string } | null {
+  if (finished?.overall) return { level: finished.overall.level, summary: finished.overall.summary, runId: finished.id }
+  const latest = partner.latest_overall
+  if (latest) return { level: latest.level, summary: latest.summary, runId: latest.run_id }
+  return null
 }

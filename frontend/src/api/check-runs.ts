@@ -28,6 +28,8 @@ export type OverallResult = {
   summary: string
   /** Every source of the run, in the run's order. */
   reasons: OverallReason[]
+  /** Sources that apply to the partner but are not set up on the server, e.g. ["FIRMENBUCH"]. */
+  not_checked: string[]
   /** The result is information only; the decision stays with the customer. */
   disclaimer: string
 }

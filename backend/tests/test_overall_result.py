@@ -11,6 +11,7 @@ from app.checks.overall import (
     Level,
     Rules,
     overall_result,
+    sources_left_out,
 )
 
 OK = CheckStatus.OK
@@ -201,3 +202,47 @@ def test_a_missing_source_is_yellow_even_when_errors_are_set_to_red() -> None:
 def test_a_run_without_sources_has_no_result() -> None:
     with pytest.raises(ValueError):
         overall_result([], {}, DEFAULT)
+
+
+# --- sources that are not set up on the server (review follow-up) -------------------
+
+
+def test_register_sources_left_out_only_matter_with_a_register_number() -> None:
+    assert sources_left_out(SOURCES, has_register_number=True) == (
+        "FIRMENBUCH",
+        "GISA",
+    )
+    assert sources_left_out(SOURCES, has_register_number=False) == ()
+    assert sources_left_out((*SOURCES, "FIRMENBUCH"), has_register_number=True) == (
+        "GISA",
+    )
+
+
+def test_a_source_that_is_not_set_up_is_named_but_does_not_change_the_level() -> None:
+    result = overall_result(
+        SOURCES,
+        {"VIES": OK, "BMF": OK, "HFU": OK},
+        DEFAULT,
+        not_checked=["FIRMENBUCH"],
+    )
+
+    assert result.level == Level.GREEN
+    assert result.not_checked == ("FIRMENBUCH",)
+    assert result.summary.endswith(
+        "The Firmenbuch is not set up on this server, so it was not checked."
+    )
+
+
+def test_two_sources_not_set_up() -> None:
+    result = overall_result(
+        SOURCES,
+        {"VIES": OK, "BMF": FINDING, "HFU": OK},
+        DEFAULT,
+        not_checked=["FIRMENBUCH", "GISA"],
+    )
+
+    assert result.level == Level.RED
+    assert result.summary == (
+        "A problem was found by the BMF list. The Firmenbuch and GISA are not set up "
+        "on this server, so they were not checked."
+    )
